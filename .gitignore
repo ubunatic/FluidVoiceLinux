@@ -199,8 +199,9 @@ RELEASE_NOTES_*
 
 **.dmg
 **.dmg.zip
-# Documentation backups (for future reference, not needed in repo)
-docs/
+
+# DOCS are a key part of a product, we must not ignore them
+# docs/
 
 
 .agent/
