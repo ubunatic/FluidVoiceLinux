@@ -1,0 +1,164 @@
+---
+title: Swift Development on Linux
+weight: 64
+---
+
+# Swift Development on Linux
+
+> **Who this is for** — anyone (agent or human) picking up the Linux CLI
+> work stream cold. Read this before touching `Package.swift`,
+> `Sources/FluidVoiceLinuxCLI*`, or `Tests/FluidVoiceLinuxCLI*`.
+>
+> **Context**: `docs/LINUX_MIGRATION_BRANCH_PLAN.md` (the phased plan),
+> `docs/LINUX_SETUP.md` (toolchain/package details), `docs/Make.md`
+> (Makefile conventions used here). This doc is the "how Swift-on-Linux
+> actually behaves" reference distilled from doing Phases 0-2.
+
+---
+
+## TL;DR
+
+```sh
+make apt-deps       # once, installs the real toolchain (see gotcha below)
+make build          # swift build -c release --product FluidVoiceLinuxCLI
+make run            # build + run the Linux CLI binary
+make test           # swift test — Linux-eligible tests only
+```
+
+This repo builds a macOS SwiftUI app (`Sources/Fluid/**`) and, as a
+separate work stream, a headless Linux CLI (`Sources/FluidVoiceLinuxCLI*`).
+One `Package.swift` serves both platforms — see below for how.
+
+## 1. Toolchain: name collisions on Debian/Ubuntu
+
+**`apt install swift` installs the wrong thing.** On Debian/Ubuntu, the
+`swift` package is OpenStack Swift (object storage), version `2.x` —
+completely unrelated. The real Apple Swift toolchain package is
+**`swiftlang`** (`swiftlang-dev` for headers). Always verify with
+`apt-cache policy swift swiftlang` before assuming either name.
+
+Fedora uses `swift-lang` instead (untested by this project so far —
+verify package names for real before trusting `make dnf-deps` blindly).
+
+Once installed, `swift --version` should report something like:
+```
+Swift version 6.1.3 (swift-6.1.3-RELEASE)
+Target: x86_64-pc-linux-gnu
+```
+
+**`swift` binary location and the postinst symlink**: `swiftlang`'s real
+binaries live under `/usr/libexec/swift/bin/` (`swift` there is itself a
+symlink to `swift-driver`). The package's `postinst` asks a debconf
+question and, by default, symlinks `/usr/bin/swift ->
+/usr/libexec/swift/bin/swift` so it's just on `PATH`. If `swift` is
+missing from `PATH` after install, check for that symlink first
+(`dpkg-reconfigure swiftlang`) before assuming the install failed.
+
+**No vendored toolchain needed (for now).** `swift-tools-version: 5.9` in
+this `Package.swift` is comfortably satisfied by apt's `6.1.3`. Don't
+build a `vendor/swift` download-and-unpack path speculatively — only add
+it if/when a target distro's packaged Swift is genuinely too old or
+missing. See `docs/LINUX_SETUP.md` for the deferred plan.
+
+**Testing a toolchain without root**: if a session has no interactive
+`sudo`, you can still validate a candidate package set without installing
+system-wide: `apt-get download <pkg>` (no root required) followed by
+`dpkg-deb -x <pkg>.deb <scratchdir>`, then point `PATH` at
+`<scratchdir>/usr/bin` (or wherever the extracted binaries land) to run
+`swift --version` / `swift build` for real before committing to a
+decision.
+
+## 2. One `Package.swift`, two platforms
+
+SwiftPM does not support per-platform *inclusion* of whole targets or
+dependencies declaratively inside the `targets:`/`dependencies:` array
+literals. But `Package.swift` is plain Swift, executed by the host's
+own toolchain when SwiftPM loads the manifest — so `#if os(macOS)` /
+`#else` around **array-building code** works perfectly and is the
+standard trick:
+
+```swift
+var dependencies: [Package.Dependency] = []
+var targets: [Target] = []
+
+#if os(macOS)
+dependencies += [ /* AppUpdater, FluidAudio, ... */ ]
+targets += [ /* CoreAudioCaptureSupport, FluidVoice, FluidDictationIntegrationTests */ ]
+#else
+targets += [ /* FluidVoiceLinuxCLI, FluidVoiceLinuxCLICore, FluidVoiceLinuxCLITests */ ]
+#endif
+
+let package = Package(name: "FluidVoice", platforms: [.macOS("15.0")],
+                       dependencies: dependencies, targets: targets)
+```
+
+Consequences of this pattern:
+- Running `swift build`/`swift test`/`swift package resolve` **on Linux**
+  never even attempts to compile or resolve macOS-only code or
+  dependencies (AppKit/SwiftUI/Cocoa/CoreAudio/AVFoundation imports,
+  CoreAudio linker settings, Sparkle-based `AppUpdater`, etc.).
+- The macOS Xcode project (`Fluid.xcodeproj`)/`build.sh` flow is
+  untouched — it still sees the full macOS target list when built on
+  macOS.
+- **Gotcha — `Package.resolved` churn**: any `swift build`/`test`/
+  `resolve` invocation on Linux re-resolves against the *Linux-only*
+  (currently empty) dependency graph and rewrites `Package.resolved`,
+  which would silently drop the macOS-pinned dependency versions if
+  committed. **Always run `git diff Package.resolved` after any Linux
+  Swift command and `git checkout -- Package.resolved` before
+  committing** unless you specifically intend to change pinned
+  versions.
+
+## 3. Executable vs. library targets — the testability split
+
+A `.executableTarget` whose entrypoint is a bare `main.swift` (top-level
+executable code, no `@main` type) **cannot be imported by a test
+target** — there's no module surface for XCTest/swift-testing to `import`.
+The pattern used here (see `Sources/FluidVoiceLinuxCLICore/Banner.swift`):
+
+- Put real logic in a plain `.target` (library), e.g.
+  `FluidVoiceLinuxCLICore`.
+- The `.executableTarget` (`FluidVoiceLinuxCLI`) depends on it and its
+  `main.swift` is a one-liner: `print(FluidVoiceLinuxCLIBanner.banner())`.
+- The `.testTarget` (`FluidVoiceLinuxCLITests`) depends on the library
+  target, not the executable, and imports it normally.
+
+Apply this split from the start for any new Linux CLI feature —
+subcommands in Phase 3+ should each get their logic in
+`FluidVoiceLinuxCLICore` (or a similarly-named library target) with the
+executable staying a thin dispatcher, so everything stays unit-testable.
+
+## 4. Makefile conventions in play
+
+See `docs/Make.md` for the full `⚙️`/`🤖` sentinel convention. Swift-specific
+notes:
+- `preflight` target checks `command -v swift` and prints a hint
+  (`make apt-deps`/`make dnf-deps`) instead of a raw Make error when
+  missing — always run this before assuming a build failure is a code bug.
+- `build` = `swift build -c release --product $(BINARY)`; the binary
+  lands at `.build/release/$(BINARY)`.
+- `check`/`test` = `swift test`. `swift test` prints both classic
+  XCTest-style output *and* a trailing Swift Testing summary line
+  (`◇ Test run started...✔ Test run with 0 tests passed`) even when all
+  tests are XCTest-based — that's the swift-testing library being
+  scanned with zero tests in it, not an error, don't chase it.
+- `.build/` is gitignored (already in `.gitignore`); a future
+  `vendor/swift` (if ever added) should be too.
+
+## 5. Verified environment (as of this writing)
+
+- Ubuntu 26.04 "resolute", `swiftlang` 6.1.3-4build1 via apt (universe repo).
+- `swift build`/`swift run`/`swift test` all confirmed working end-to-end
+  for the `FluidVoiceLinuxCLI` target and its test suite.
+- Fedora/`dnf-deps` package names are best-effort, **not verified on real
+  hardware** — treat with suspicion until someone runs it on Fedora and
+  updates this doc + `docs/LINUX_SETUP.md`.
+
+## 6. Where to look next
+
+- `docs/LINUX_MIGRATION_BRANCH_PLAN.md` — phase-by-phase roadmap
+  (Phase 3: ALSA/PipeWire audio capture, Phase 4: whisper.cpp on AMD
+  iGPU via Vulkan, ...).
+- `issues/README.md` — current ticket status per phase; each phase gets
+  its own issue, closed with a `## Resolution` section documenting real
+  verification output (follow that pattern for new phase tickets).
