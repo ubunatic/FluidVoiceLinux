@@ -1,6 +1,6 @@
 # 012 — Real-time Voice Activity Detection (Silero VAD) & audio segmentation
 
-**Status**: Open
+**Status**: In Progress
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Feature

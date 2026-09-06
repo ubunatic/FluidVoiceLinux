@@ -51,15 +51,25 @@ final class TranscribeCommandArgumentTests: XCTestCase {
     }
 
     func testParsesBackendAndLanguage() throws {
-        let options = try TranscribeCommand.parseArguments([
+        let cohereOpts = try TranscribeCommand.parseArguments([
             "--in", "/tmp/audio.wav",
             "--backend", "cohere",
             "--lang", "fr",
         ])
+        XCTAssertEqual(cohereOpts.backend, .cohere)
+        XCTAssertEqual(cohereOpts.language, "fr")
 
-        XCTAssertEqual(options.inputPath, "/tmp/audio.wav")
-        XCTAssertEqual(options.backend, .cohere)
-        XCTAssertEqual(options.language, "fr")
+        let parakeetOpts = try TranscribeCommand.parseArguments([
+            "--in", "/tmp/audio.wav",
+            "--backend", "parakeet",
+        ])
+        XCTAssertEqual(parakeetOpts.backend, .parakeet)
+
+        let nemotronOpts = try TranscribeCommand.parseArguments([
+            "--in", "/tmp/audio.wav",
+            "--backend", "nemotron",
+        ])
+        XCTAssertEqual(nemotronOpts.backend, .nemotron)
     }
 
     func testUnknownBackendThrows() {

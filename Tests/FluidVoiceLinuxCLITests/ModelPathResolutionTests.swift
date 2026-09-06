@@ -124,4 +124,36 @@ final class ModelPathResolutionTests: XCTestCase {
             "/data/fluidvoice/models/cohere-transcribe-q4_k.gguf"
         )
     }
+
+    func testParakeetAndNemotronResolutionPriority() {
+        XCTAssertEqual(
+            ModelPathResolver.resolveParakeet(
+                explicit: "/custom/parakeet.gguf",
+                fileExists: { _ in true },
+                xdgDataHome: "/data",
+                home: "/home/user"
+            ),
+            "/custom/parakeet.gguf"
+        )
+
+        XCTAssertEqual(
+            ModelPathResolver.resolveParakeet(
+                explicit: nil,
+                fileExists: { $0 == "/home/user/.cache/crispasr/parakeet-tdt-0.6b-v3-q4_k.gguf" },
+                xdgDataHome: "/data",
+                home: "/home/user"
+            ),
+            "/home/user/.cache/crispasr/parakeet-tdt-0.6b-v3-q4_k.gguf"
+        )
+
+        XCTAssertEqual(
+            ModelPathResolver.resolveNemotron(
+                explicit: nil,
+                fileExists: { $0 == "/home/user/.cache/crispasr/nemotron-3.5-asr-streaming-0.6b-q4_k.gguf" },
+                xdgDataHome: "/data",
+                home: "/home/user"
+            ),
+            "/home/user/.cache/crispasr/nemotron-3.5-asr-streaming-0.6b-q4_k.gguf"
+        )
+    }
 }

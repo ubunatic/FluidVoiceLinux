@@ -85,4 +85,46 @@ public enum ModelPathResolver {
 
         return "\(homeDataHomeSuffix)/\(xdgCohereModelSubpath)"
     }
+
+    public static let repoRelativeParakeetModelPath = "models/parakeet-tdt-0.6b-v3-q4_k.gguf"
+    static let xdgParakeetModelSubpath = "fluidvoice/models/parakeet-tdt-0.6b-v3-q4_k.gguf"
+    static let crispasrParakeetCacheSubpath = ".cache/crispasr/parakeet-tdt-0.6b-v3-q4_k.gguf"
+
+    public static let repoRelativeNemotronModelPath = "models/nemotron-3.5-asr-streaming-0.6b-q4_k.gguf"
+    static let xdgNemotronModelSubpath = "fluidvoice/models/nemotron-3.5-asr-streaming-0.6b-q4_k.gguf"
+    static let crispasrNemotronCacheSubpath = ".cache/crispasr/nemotron-3.5-asr-streaming-0.6b-q4_k.gguf"
+
+    public static func resolveParakeet(
+        explicit: String?,
+        fileExists: (String) -> Bool,
+        xdgDataHome: String?,
+        home: String?
+    ) -> String {
+        if let explicit { return explicit }
+        if fileExists(repoRelativeParakeetModelPath) { return repoRelativeParakeetModelPath }
+        if let home, !home.isEmpty {
+            let cachePath = "\(home)/\(crispasrParakeetCacheSubpath)"
+            if fileExists(cachePath) { return cachePath }
+        }
+        if let xdgDataHome, !xdgDataHome.isEmpty { return "\(xdgDataHome)/\(xdgParakeetModelSubpath)" }
+        if let home, !home.isEmpty { return "\(home)/\(homeDataHomeSuffix)/\(xdgParakeetModelSubpath)" }
+        return "\(homeDataHomeSuffix)/\(xdgParakeetModelSubpath)"
+    }
+
+    public static func resolveNemotron(
+        explicit: String?,
+        fileExists: (String) -> Bool,
+        xdgDataHome: String?,
+        home: String?
+    ) -> String {
+        if let explicit { return explicit }
+        if fileExists(repoRelativeNemotronModelPath) { return repoRelativeNemotronModelPath }
+        if let home, !home.isEmpty {
+            let cachePath = "\(home)/\(crispasrNemotronCacheSubpath)"
+            if fileExists(cachePath) { return cachePath }
+        }
+        if let xdgDataHome, !xdgDataHome.isEmpty { return "\(xdgDataHome)/\(xdgNemotronModelSubpath)" }
+        if let home, !home.isEmpty { return "\(home)/\(homeDataHomeSuffix)/\(xdgNemotronModelSubpath)" }
+        return "\(homeDataHomeSuffix)/\(xdgNemotronModelSubpath)"
+    }
 }

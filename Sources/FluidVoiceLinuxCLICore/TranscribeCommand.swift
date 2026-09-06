@@ -8,21 +8,20 @@ import Foundation
 public enum STTEngineBackend: String, Equatable {
     case whisper
     case cohere
+    case parakeet
+    case nemotron
 }
 
 public struct TranscribeOptions: Equatable {
     public let inputPath: String
     /// `nil` when `--model` wasn't passed, meaning the caller should resolve
-    /// the actual path via `ModelPathResolver.resolve` / `resolveCohere` (issue 007 & 010) — this
-    /// struct/`parseArguments` stay pure and don't touch the filesystem or
-    /// environment, per docs/SwiftLinux.md §3.
+    /// the actual path via `ModelPathResolver` — this struct/`parseArguments`
+    /// stay pure and don't touch the filesystem or environment.
     public let modelPath: String?
     public let noGPU: Bool
     public let backend: STTEngineBackend
     public let language: String
 
-    /// Kept for reference/help text: the repo-relative dev-workflow default,
-    /// also exposed as `ModelPathResolver.repoRelativeModelPath`.
     public static let defaultModelPath = ModelPathResolver.repoRelativeModelPath
 
     public init(
@@ -55,15 +54,15 @@ public enum TranscribeArgumentError: Error, CustomStringConvertible, Equatable {
         case .unknownArgument(let argument):
             return "unknown argument '\(argument)'"
         case .unknownBackend(let backend):
-            return "unknown STT backend '\(backend)' (expected 'whisper' or 'cohere')"
+            return "unknown STT backend '\(backend)' (expected 'whisper', 'cohere', 'parakeet', or 'nemotron')"
         }
     }
 }
 
 public enum TranscribeCommand {
-    /// Parses `transcribe` subcommand arguments (everything after the "transcribe"
-    /// token itself). Supported flags: `--in path` (required), `--model path`
-    /// (optional), `--backend whisper|cohere` (optional, default: whisper),
+    /// Parses `transcribe` subcommand arguments. Supported flags:
+    /// `--in path` (required), `--model path` (optional),
+    /// `--backend whisper|cohere|parakeet|nemotron` (optional, default: whisper),
     /// `--lang <code>` (optional, default: en), `--no-gpu` (optional).
     public static func parseArguments(_ arguments: [String]) throws -> TranscribeOptions {
         var inputPath: String?
@@ -93,10 +92,8 @@ public enum TranscribeCommand {
                 noGPU = true
             case "--backend":
                 let val = try nextValue().lowercased()
-                if val == "cohere" {
-                    backend = .cohere
-                } else if val == "whisper" {
-                    backend = .whisper
+                if let matched = STTEngineBackend(rawValue: val) {
+                    backend = matched
                 } else {
                     throw TranscribeArgumentError.unknownBackend(val)
                 }
@@ -121,8 +118,7 @@ public enum TranscribeCommand {
         )
     }
 
-    /// Runs the full `transcribe` subcommand: parses arguments, reads+decodes the
-    /// WAV file, and runs STT inference (Whisper or Cohere). Returns exit code.
+    /// Runs the full `transcribe` subcommand.
     public static func run(arguments: [String]) -> Int32 {
         let options: TranscribeOptions
         do {
@@ -195,17 +191,41 @@ public enum TranscribeCommand {
             print(result.text)
             return 0
 
-        case .cohere:
-            let modelPath = ModelPathResolver.resolveCohere(
-                explicit: options.modelPath,
-                fileExists: fileExists,
-                xdgDataHome: xdgDataHome,
-                home: home
-            )
+        case .cohere, .parakeet, .nemotron:
+            let modelPath: String
+            let modelLabel: String
+            switch options.backend {
+            case .cohere:
+                modelPath = ModelPathResolver.resolveCohere(
+                    explicit: options.modelPath,
+                    fileExists: fileExists,
+                    xdgDataHome: xdgDataHome,
+                    home: home
+                )
+                modelLabel = "Cohere Transcribe"
+            case .parakeet:
+                modelPath = ModelPathResolver.resolveParakeet(
+                    explicit: options.modelPath,
+                    fileExists: fileExists,
+                    xdgDataHome: xdgDataHome,
+                    home: home
+                )
+                modelLabel = "Parakeet TDT v3"
+            case .nemotron:
+                modelPath = ModelPathResolver.resolveNemotron(
+                    explicit: options.modelPath,
+                    fileExists: fileExists,
+                    xdgDataHome: xdgDataHome,
+                    home: home
+                )
+                modelLabel = "Nemotron Speech 3.5"
+            case .whisper:
+                fatalError("unreachable")
+            }
 
             print(
                 "Transcribing '\(options.inputPath)' (\(decoded.monoSamples.count) samples @ "
-                    + "\(decoded.sampleRate) Hz) with Cohere Transcribe model '\(modelPath)' "
+                    + "\(decoded.sampleRate) Hz) with \(modelLabel) model '\(modelPath)' "
                     + "(lang: \(options.language))"
             )
 
