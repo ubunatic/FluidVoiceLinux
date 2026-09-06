@@ -1,6 +1,6 @@
 # 007 — Default whisper model path is CWD-relative, breaks when installed
 
-**Status**: Open
+**Status**: In Progress
 **Priority**: P3 (Low)
 **Severity**: Minor
 **Category**: Bug
