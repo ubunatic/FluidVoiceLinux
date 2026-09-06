@@ -12,7 +12,8 @@ weight: 64
 > **Context**: `docs/LINUX_MIGRATION_BRANCH_PLAN.md` (the phased plan),
 > `docs/LINUX_SETUP.md` (toolchain/package details), `docs/Make.md`
 > (Makefile conventions used here). This doc is the "how Swift-on-Linux
-> actually behaves" reference distilled from doing Phases 0-2.
+> actually behaves" reference distilled from doing Phases 0-4 (issues
+> 001-004) plus the model-path follow-up (issue 007).
 
 ---
 
@@ -60,13 +61,18 @@ build a `vendor/swift` download-and-unpack path speculatively — only add
 it if/when a target distro's packaged Swift is genuinely too old or
 missing. See `docs/LINUX_SETUP.md` for the deferred plan.
 
-**Testing a toolchain without root**: if a session has no interactive
-`sudo`, you can still validate a candidate package set without installing
-system-wide: `apt-get download <pkg>` (no root required) followed by
-`dpkg-deb -x <pkg>.deb <scratchdir>`, then point `PATH` at
-`<scratchdir>/usr/bin` (or wherever the extracted binaries land) to run
-`swift --version` / `swift build` for real before committing to a
-decision.
+**Testing any apt package without root** (recurred for the toolchain in
+issue 001 and for `libwhisper-dev`/`libggml-dev` in issue 004 — this is
+a general technique, not toolchain-specific): if a session has no
+interactive `sudo`, you can still validate a candidate package set
+without installing system-wide: `apt-get download <pkg>` (no root
+required) followed by `dpkg-deb -x <pkg>.deb <scratchdir>`, then point
+`PATH`/`CPATH`/`PKG_CONFIG_PATH`/linker `-L` flags at `<scratchdir>`'s
+extracted layout to build/run for real before committing to a decision.
+The real `make apt-deps` a human runs installs the same packages at
+their normal system paths — the scratch-dir dance is a dev-session-only
+verification step, never a substitute for the real install in the
+Makefile.
 
 ## 2. One `Package.swift`, two platforms
 
@@ -128,6 +134,21 @@ subcommands in Phase 3+ should each get their logic in
 `FluidVoiceLinuxCLICore` (or a similarly-named library target) with the
 executable staying a thin dispatcher, so everything stays unit-testable.
 
+**Recurring sub-pattern — injectable side effects for pure-function
+tests.** Every subcommand built so far (`RecordCommand`,
+`TranscribeCommand`, `ModelPathResolver`) separates a pure decision
+function from the code that actually touches the filesystem/environment:
+`parseArguments` takes `[String]` and returns a `Result`/options struct
+with no I/O; `ModelPathResolver.resolve(explicit:fileExists:xdgDataHome:home:)`
+takes closures for "does this path exist" and "what is $XDG_DATA_HOME"
+instead of calling `FileManager`/`ProcessInfo` directly. The real
+`FileManager.default.fileExists`/`ProcessInfo` calls are wired in exactly
+once, at the `run()` call site, right before the pure function's result is
+used. This is the single reason `make test`'s 27 tests all run with zero
+hardware/model/filesystem dependencies — keep doing it for every new
+subcommand rather than reaching for a mocking framework or `#if TESTING`
+branches.
+
 ## 4. Makefile conventions in play
 
 See `docs/Make.md` for the full `⚙️`/`🤖` sentinel convention. Swift-specific
@@ -148,20 +169,30 @@ notes:
 ## 5. Verified environment (as of this writing)
 
 - Ubuntu 26.04 "resolute", `swiftlang` 6.1.3-4build1 via apt (universe repo).
-- `swift build`/`swift run`/`swift test` all confirmed working end-to-end
-  for the `FluidVoiceLinuxCLI` target and its test suite.
+- `swift build`/`swift run`/`swift test` confirmed working end-to-end for
+  `FluidVoiceLinuxCLI` and its test suite, including as an *installed*
+  binary (`make install` → `~/.local/bin/FluidVoiceLinuxCLI`, on `PATH`,
+  runnable from any directory — issue 007).
+- `record`/`transcribe` subcommands both human-verified on real hardware:
+  ALSA capture via the default (PipeWire-mediated) device, whisper.cpp
+  transcription GPU-accelerated on this box's AMD Radeon 780M (Phoenix)
+  iGPU via a Vulkan backend, with a verified real CPU fallback on GPU-init
+  failure. See issues 003/004 for the transcripts and timing evidence.
 - Fedora/`dnf-deps` package names are best-effort, **not verified on real
   hardware** — treat with suspicion until someone runs it on Fedora and
   updates this doc + `docs/LINUX_SETUP.md`.
 
 ## 6. Where to look next
 
-- `docs/LINUX_MIGRATION_BRANCH_PLAN.md` — phase-by-phase roadmap
-  (Phase 3: ALSA/PipeWire audio capture, Phase 4: whisper.cpp on AMD
-  iGPU via Vulkan, ...).
-- `issues/README.md` — current ticket status per phase; each phase gets
-  its own issue, closed with a `## Resolution` section documenting real
-  verification output (follow that pattern for new phase tickets).
+- `docs/LINUX_MIGRATION_BRANCH_PLAN.md` — phase-by-phase roadmap. Phases
+  0-4 are done; Phase 5+ (config persistence, packaging, CI) is open
+  backlog (issue 005).
+- `issues/README.md` — current ticket status; each phase/fix gets its own
+  issue, closed with a `## Resolution` section documenting real
+  verification output (follow that pattern for new tickets). Issue 006
+  (a click/pop transient at recording start, found in real captured PCM
+  data — not just assumed external) is open and unfixed; ignore it for
+  unrelated work unless asked.
 
 ## 7. A second C-interop pattern: `.systemLibrary` (Phase 4)
 
@@ -181,3 +212,31 @@ Clang importer chokes on) — check this first (`grep -n
 own API surface (`snd_pcm_*`) isn't the shape this CLI wants exposed
 (blocking read loop, error code translation, opaque handle) — that's a
 judgment call about API design, not just C-vs-C++ header compatibility.
+
+## 8. Where an installed CLI should look for its own data files
+
+A repo-relative default (`models/ggml-base.en.bin`, resolved against
+CWD) works fine for `make run` during development but silently breaks
+the moment the binary is installed and invoked from an arbitrary
+directory (`make install` → `~/.local/bin/FluidVoiceLinuxCLI`, on
+`PATH`) — issue 007. The macOS app's own convention
+(`Sources/Fluid/Persistence/**`) is `FileManager`'s
+`.applicationSupportDirectory` for durable data and `.cachesDirectory`
+for disposable data; the Linux/XDG equivalents are `$XDG_DATA_HOME`
+(default `~/.local/share`) and `$XDG_CACHE_HOME` (default `~/.cache`)
+respectively. `ModelPathResolver` (`Sources/FluidVoiceLinuxCLICore/
+ModelPathResolver.swift`) is the reference implementation: try, in
+order, (1) an explicit flag/argument, (2) the repo-relative dev default
+if it exists (don't regress the existing dev loop), (3) the real
+`$XDG_DATA_HOME/fluidvoice/...` default. Follow this same order/pattern
+for any future feature that reads a file the user or an installer
+placed on disk (config, cached data, models) — don't invent a
+project-specific location per feature.
+
+Note: this session also created an informal `~/.config/fluidvoice/dev/
+samples/` directory by hand, for storing test recordings during Phase
+3/4 development. That is **not** an XDG-correct location for anything
+(recordings aren't "config"), and no code in this repo creates or reads
+it — it's a human/agent scratch convention, not a pattern to follow in
+actual CLI code. Don't confuse it with the `$XDG_DATA_HOME` default
+above.

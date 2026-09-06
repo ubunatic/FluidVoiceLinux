@@ -5,10 +5,27 @@ Stand up a Linux-native, headless CLI build of FluidVoice as a second work
 stream that runs alongside the macOS app, without disturbing macOS
 release work. Not a UI port — Linux target is CLI-only.
 
+## Status (as of 2026-09-07)
+Phases 0-4 are **done** — canary, `record`, and GPU-accelerated
+`transcribe` all work end-to-end on real hardware, human-verified (not
+just agent-sandbox-verified). See `issues/001`-`004` (all closed) and
+`issues/007` (a Phase 4 follow-up, also closed). Open: `issues/005`
+(Phase 5+ backlog, not started) and `issues/006` (a click/pop transient
+found in real captured audio at recording start — open, unfixed,
+intentionally deferred). `docs/SwiftLinux.md` has the accumulated
+"how Swift-on-Linux actually behaves" reference distilled from this
+work; read it before starting new Linux CLI work.
+
 ## Branch Strategy
-- Branch name: `B/linux-migration`
-- Base off `main`, rebase periodically; do not merge into `main` until the
-  canary milestone builds green on Linux.
+- **Correction, actual practice**: despite the branch name below,
+  Phases 0-4 (and issue 007) were all committed directly to `main`, per
+  this repo's `docs/Git.md` convention of working on the default branch —
+  `B/linux-migration` was never created. Update this section if a real
+  separate branch is adopted later; until then, treat `main` as where
+  this work lives.
+- Original plan (kept for reference): branch name `B/linux-migration`,
+  based off `main`, not merged until the canary milestone builds green
+  on Linux.
 - macOS `Sources/Fluid/**` stays untouched by this branch except for
   `#if os(macOS)` guards needed to keep a shared `Package.swift` buildable
   on both platforms (see Phase 0).
