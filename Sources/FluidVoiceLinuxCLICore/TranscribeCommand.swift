@@ -7,14 +7,20 @@ import Foundation
 /// `parseArguments` is unit-testable without a model file, real WAV data, or a GPU.
 public struct TranscribeOptions: Equatable {
     public let inputPath: String
-    public let modelPath: String
+    /// `nil` when `--model` wasn't passed, meaning the caller should resolve
+    /// the actual path via `ModelPathResolver.resolve` (issue 007) — this
+    /// struct/`parseArguments` stay pure and don't touch the filesystem or
+    /// environment, per docs/SwiftLinux.md §3.
+    public let modelPath: String?
     public let noGPU: Bool
 
-    public static let defaultModelPath = "models/ggml-base.en.bin"
+    /// Kept for reference/help text: the repo-relative dev-workflow default,
+    /// also exposed as `ModelPathResolver.repoRelativeModelPath`.
+    public static let defaultModelPath = ModelPathResolver.repoRelativeModelPath
 
     public init(
         inputPath: String,
-        modelPath: String = TranscribeOptions.defaultModelPath,
+        modelPath: String? = nil,
         noGPU: Bool = false
     ) {
         self.inputPath = inputPath
@@ -43,11 +49,13 @@ public enum TranscribeArgumentError: Error, CustomStringConvertible {
 public enum TranscribeCommand {
     /// Parses `transcribe` subcommand arguments (everything after the "transcribe"
     /// token itself). Supported flags: `--in path` (required), `--model path`
-    /// (optional, defaults to `models/ggml-base.en.bin`, matching whisper.cpp's own
-    /// CLI default), `--no-gpu` (optional, forces CPU-only inference).
+    /// (optional — when omitted, `TranscribeCommand.run` resolves the real default
+    /// via `ModelPathResolver`, issue 007: repo-relative `models/ggml-base.en.bin`
+    /// if present, else `$XDG_DATA_HOME/fluidvoice/models/ggml-base.en.bin`),
+    /// `--no-gpu` (optional, forces CPU-only inference).
     public static func parseArguments(_ arguments: [String]) throws -> TranscribeOptions {
         var inputPath: String?
-        var modelPath = TranscribeOptions.defaultModelPath
+        var modelPath: String?
         var noGPU = false
 
         var index = 0
@@ -115,10 +123,20 @@ public enum TranscribeCommand {
             return 1
         }
 
+        // Issue 007: resolve the real model path here (real filesystem/env
+        // access), not in parseArguments — see ModelPathResolver's doc comment
+        // for the three-way resolution order.
+        let modelPath = ModelPathResolver.resolve(
+            explicit: options.modelPath,
+            fileExists: { FileManager.default.fileExists(atPath: $0) },
+            xdgDataHome: ProcessInfo.processInfo.environment["XDG_DATA_HOME"],
+            home: ProcessInfo.processInfo.environment["HOME"]
+        )
+
         let backend: WhisperBackend = options.noGPU ? .cpuOnly : .auto
         print(
             "Transcribing '\(options.inputPath)' (\(decoded.monoSamples.count) samples @ "
-                + "\(decoded.sampleRate) Hz) with model '\(options.modelPath)' "
+                + "\(decoded.sampleRate) Hz) with model '\(modelPath)' "
                 + "(backend: \(backend == .auto ? "gpu-if-available" : "cpu-only"))"
         )
 
@@ -126,7 +144,7 @@ public enum TranscribeCommand {
         do {
             result = try WhisperTranscriber.transcribe(
                 samples: decoded.monoSamples,
-                modelPath: options.modelPath,
+                modelPath: modelPath,
                 backend: backend
             )
         } catch {

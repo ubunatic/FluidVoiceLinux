@@ -11,7 +11,10 @@ final class TranscribeCommandArgumentTests: XCTestCase {
         let options = try TranscribeCommand.parseArguments(["--in", "/tmp/x.wav"])
 
         XCTAssertEqual(options.inputPath, "/tmp/x.wav")
-        XCTAssertEqual(options.modelPath, TranscribeOptions.defaultModelPath)
+        // Issue 007: unset --model means "not explicit" — resolution to a real
+        // default path happens in TranscribeCommand.run via ModelPathResolver,
+        // not here. See ModelPathResolutionTests.swift for that logic.
+        XCTAssertNil(options.modelPath)
         XCTAssertFalse(options.noGPU)
     }
 

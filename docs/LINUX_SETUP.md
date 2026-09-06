@@ -187,9 +187,25 @@ via `use_gpu = false`, for testing or for boxes without a GPU at all.
 `ggml-base.en.bin`) are not packaged by apt — download from
 `https://huggingface.co/ggerganov/whisper.cpp` (or whisper.cpp's own
 `models/download-ggml-model.sh` if building from source) and pass the path
-via `transcribe --model <path>` (defaults to `models/ggml-base.en.bin`,
-matching `whisper-cli`'s own default). `ggml-base.en.bin` (~148 MB) is what
-this ticket's verification used.
+via `transcribe --model <path>`. `ggml-base.en.bin` (~148 MB) is what this
+ticket's verification used.
+
+**Default model lookup order** (issue 007, when `--model` isn't given —
+see `Sources/FluidVoiceLinuxCLICore/ModelPathResolver.swift`):
+
+1. Repo-relative `models/ggml-base.en.bin`, if it exists — the dev-workflow
+   default, used by `make run` from the repo root (matches `whisper-cli`'s
+   own default).
+2. Otherwise `$XDG_DATA_HOME/fluidvoice/models/ggml-base.en.bin`, falling
+   back to `~/.local/share/fluidvoice/models/ggml-base.en.bin` when
+   `$XDG_DATA_HOME` is unset — the real default for the binary once
+   installed (`make install` puts it on `PATH`) and invoked from an
+   arbitrary directory. Place the downloaded model there for a normal
+   installed-binary setup, e.g.:
+   ```sh
+   mkdir -p ~/.local/share/fluidvoice/models
+   cp ggml-base.en.bin ~/.local/share/fluidvoice/models/ggml-base.en.bin
+   ```
 
 **Real transcription + GPU-vs-CPU timing evidence** (this box, `ggml-base.en.bin`,
 `~/.config/fluidvoice/dev/samples/test.wav`, ground truth "a b c d e f g h i j k l m n"):
