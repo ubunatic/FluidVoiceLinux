@@ -1,6 +1,6 @@
 # 015 — Integration tests for >=60s concatenated audio dictation & clipboard/typing output drivers
 
-**Status**: Open
+**Status**: In Progress
 **Priority**: P2 (Medium)
 **Severity**: Normal
 **Category**: Testing
