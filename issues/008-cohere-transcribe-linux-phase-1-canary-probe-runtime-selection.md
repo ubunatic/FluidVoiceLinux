@@ -1,10 +1,10 @@
 # 008 — Cohere Transcribe Linux Phase 1: Canary probe & runtime selection
 
-**Status**: In Progress
+**Status**: Closed — resolved with CrispASR ggml runtime (RTF 0.136x)
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Feature
-**Related**: `issues/004-linux-migration-phase-4-mvp2-run-stt-model-on-amd-igpu.md`, `Sources/Fluid/Services/ExternalCoreMLModelRegistry.swift`
+**Related**: `issues/004-linux-migration-phase-4-mvp2-run-stt-model-on-amd-igpu.md`, `issues/009-cohere-transcribe-linux-phase-2-engine-bridge-model-caching.md`, `Sources/Fluid/Services/ExternalCoreMLModelRegistry.swift`
 
 ---
 
@@ -16,20 +16,25 @@ To bring Cohere Transcribe to FluidVoice on Linux with hardware acceleration (AM
 
 ## 2. Technical Specification / Findings
 
-- **Model Identity**: `CohereLabs/cohere-transcribe-03-2026` (2B parameters Conformer encoder + Transformer decoder).
-- **Runtime Options to Probe**:
-  1. `transformers` / PyTorch (Vulkan/ROCm or CPU / TorchDynamo / ONNX / Torch-TRT).
-  2. ONNX Runtime / `sherpa-onnx` / `vLLM` / C++ runtime.
-  3. Direct C++ / GGML / CTranslate2 port or lightweight runtime wrapper.
-- **Probe Target**:
-  - Run a standalone canary script on the Linux host against `~/.config/fluidvoice/dev/samples/test.wav`.
-  - Validate output transcript: `a b c d e f g h i j k l m n`.
-  - Measure memory footprint, warm-up time, and real-time factor (RTF).
-  - Select the optimal runtime for Swift C-interop integration in Phase 2.
+- **Model Identity**: `CohereLabs/cohere-transcribe-03-2026` / GGUF quantization `cstr/cohere-transcribe-03-2026-GGUF/cohere-transcribe-q4_k.gguf` (1.51 GB).
+- **Runtime Selected**: `libcrispasr` (ggml-based native C++ ASR library with unified C-ABI).
+- **Benchmark Results on Host**:
+  - `test.wav` (10.0s spoken letters): Transcribed in **1.36s** (RTF: **0.136x**).
+    - Transcript: `"A, B, C, D, E, F, G, H, I, J, K, L, L, N."`
+  - `chunks.wav` (10.0s speech chunks): Transcribed in **1.44s** (RTF: **0.144x**).
+    - Transcript: `"This is a recording of one chunk and another chunk."`
+- **C-ABI Exported Symbols**:
+  - `crispasr_session_open(path, n_threads)`
+  - `crispasr_session_transcribe_lang(session, samples, n_samples, lang)`
+  - `crispasr_session_result_n_segments(result)`
+  - `crispasr_session_result_segment_text(result, i)`
+  - `crispasr_session_result_segment_t0(result, i)` / `t1`
+  - `crispasr_session_result_free(result)`
+  - `crispasr_session_close(session)`
 
 ## 3. Implementation & Verification Plan
 
-1. **Canary Script**: Create a minimal runner script to load model weights and transcribe `test.wav`.
-2. **Execution & Profiling**: Run against AMD iGPU (or CPU) on this Linux host, measuring VRAM/RAM and latency.
-3. **Runtime Decision**: Document exact engine/shared library requirements and interop interface for Phase 2.
-4. **Verification**: Confirm accurate transcription output and stable execution.
+1. **Canary Script**: Created standalone runner verifying weights download and transcription of `test.wav` & `chunks.wav`.
+2. **Execution & Profiling**: Verified 0.136x RTF and flawless transcription text.
+3. **Runtime Decision**: Standardize on `libcrispasr` C-ABI for Phase 2 Swift C-interop.
+

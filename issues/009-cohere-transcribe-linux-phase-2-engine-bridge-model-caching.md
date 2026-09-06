@@ -1,6 +1,6 @@
 # 009 — Cohere Transcribe Linux Phase 2: Engine bridge & model caching
 
-**Status**: Open
+**Status**: In Progress
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Feature
