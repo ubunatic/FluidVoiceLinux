@@ -21,6 +21,11 @@ public struct TranscribeOptions: Equatable {
     public let noGPU: Bool
     public let backend: STTEngineBackend
     public let language: String
+    public let enhance: Bool
+    public let aiProvider: AIProvider
+    public let aiModel: String?
+    public let aiAPIKey: String?
+    public let aiEndpoint: String?
 
     public static let defaultModelPath = ModelPathResolver.repoRelativeModelPath
 
@@ -29,13 +34,23 @@ public struct TranscribeOptions: Equatable {
         modelPath: String? = nil,
         noGPU: Bool = false,
         backend: STTEngineBackend = .whisper,
-        language: String = "en"
+        language: String = "en",
+        enhance: Bool = false,
+        aiProvider: AIProvider = .ollama,
+        aiModel: String? = nil,
+        aiAPIKey: String? = nil,
+        aiEndpoint: String? = nil
     ) {
         self.inputPath = inputPath
         self.modelPath = modelPath
         self.noGPU = noGPU
         self.backend = backend
         self.language = language
+        self.enhance = enhance
+        self.aiProvider = aiProvider
+        self.aiModel = aiModel
+        self.aiAPIKey = aiAPIKey
+        self.aiEndpoint = aiEndpoint
     }
 }
 
@@ -44,6 +59,7 @@ public enum TranscribeArgumentError: Error, CustomStringConvertible, Equatable {
     case missingRequired(flag: String)
     case unknownArgument(String)
     case unknownBackend(String)
+    case unknownAIProvider(String)
 
     public var description: String {
         switch self {
@@ -55,6 +71,8 @@ public enum TranscribeArgumentError: Error, CustomStringConvertible, Equatable {
             return "unknown argument '\(argument)'"
         case .unknownBackend(let backend):
             return "unknown STT backend '\(backend)' (expected 'whisper', 'cohere', 'parakeet', or 'nemotron')"
+        case .unknownAIProvider(let provider):
+            return "unknown AI provider '\(provider)' (expected 'ollama', 'openai', 'anthropic', 'gemini', 'groq', 'openrouter', or 'custom')"
         }
     }
 }
@@ -63,13 +81,21 @@ public enum TranscribeCommand {
     /// Parses `transcribe` subcommand arguments. Supported flags:
     /// `--in path` (required), `--model path` (optional),
     /// `--backend whisper|cohere|parakeet|nemotron` (optional, default: whisper),
-    /// `--lang <code>` (optional, default: en), `--no-gpu` (optional).
+    /// `--lang <code>` (optional, default: en), `--no-gpu` (optional),
+    /// `--enhance` (optional, default: false),
+    /// `--ai-provider ollama|openai|anthropic|gemini|groq|openrouter|custom` (optional, default: ollama),
+    /// `--ai-model <name>` (optional), `--ai-api-key <key>` (optional), `--ai-endpoint <url>` (optional).
     public static func parseArguments(_ arguments: [String]) throws -> TranscribeOptions {
         var inputPath: String?
         var modelPath: String?
         var noGPU = false
         var backend: STTEngineBackend = .whisper
         var language: String = "en"
+        var enhance = false
+        var aiProvider: AIProvider = .ollama
+        var aiModel: String?
+        var aiAPIKey: String?
+        var aiEndpoint: String?
 
         var index = 0
         while index < arguments.count {
@@ -99,6 +125,21 @@ public enum TranscribeCommand {
                 }
             case "--lang", "--language":
                 language = try nextValue()
+            case "--enhance":
+                enhance = true
+            case "--ai-provider", "--provider":
+                let val = try nextValue().lowercased()
+                if let matched = AIProvider(rawValue: val) {
+                    aiProvider = matched
+                } else {
+                    throw TranscribeArgumentError.unknownAIProvider(val)
+                }
+            case "--ai-model":
+                aiModel = try nextValue()
+            case "--ai-api-key":
+                aiAPIKey = try nextValue()
+            case "--ai-endpoint":
+                aiEndpoint = try nextValue()
             default:
                 throw TranscribeArgumentError.unknownArgument(argument)
             }
@@ -114,7 +155,12 @@ public enum TranscribeCommand {
             modelPath: modelPath,
             noGPU: noGPU,
             backend: backend,
-            language: language
+            language: language,
+            enhance: enhance,
+            aiProvider: aiProvider,
+            aiModel: aiModel,
+            aiAPIKey: aiAPIKey,
+            aiEndpoint: aiEndpoint
         )
     }
 
@@ -188,7 +234,25 @@ public enum TranscribeCommand {
                     result.inferenceSeconds
                 )
             )
-            print(result.text)
+            let rawText = result.text
+            if options.enhance {
+                let aiConfig = AIEnhancementConfiguration(
+                    provider: options.aiProvider,
+                    model: options.aiModel,
+                    baseURL: options.aiEndpoint,
+                    apiKey: options.aiAPIKey
+                )
+                print("Enhancing transcription with \(options.aiProvider.rawValue)...")
+                do {
+                    let enhanced = try AIEnhancementService.enhanceBlocking(text: rawText, config: aiConfig)
+                    print(enhanced)
+                } catch {
+                    FileHandle.standardError.write(Data("transcribe: AI enhancement warning: \(error)\n".utf8))
+                    print(rawText)
+                }
+            } else {
+                print(rawText)
+            }
             return 0
 
         case .cohere, .parakeet, .nemotron:
@@ -248,7 +312,26 @@ public enum TranscribeCommand {
                     result.inferenceSeconds
                 )
             )
-            print(result.text)
+
+            let rawText = result.text
+            if options.enhance {
+                let aiConfig = AIEnhancementConfiguration(
+                    provider: options.aiProvider,
+                    model: options.aiModel,
+                    baseURL: options.aiEndpoint,
+                    apiKey: options.aiAPIKey
+                )
+                print("Enhancing transcription with \(options.aiProvider.rawValue)...")
+                do {
+                    let enhanced = try AIEnhancementService.enhanceBlocking(text: rawText, config: aiConfig)
+                    print(enhanced)
+                } catch {
+                    FileHandle.standardError.write(Data("transcribe: AI enhancement warning: \(error)\n".utf8))
+                    print(rawText)
+                }
+            } else {
+                print(rawText)
+            }
             return 0
         }
     }

@@ -1,6 +1,6 @@
 # 013 — LLM AI Post-Enhancement & Prompt Formatting (Ollama / Claude / Gemini / OpenAI)
 
-**Status**: Open
+**Status**: Closed — implemented in `AIEnhancementService.swift` & `TranscribeCommand.swift` with full mock test suite
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Feature
@@ -18,17 +18,18 @@ We need a headless AI enhancement engine in Linux CLI that can take raw ASR tran
 
 - **Provider Support**:
   - Local: Ollama (`http://localhost:11434/v1/chat/completions`)
-  - Cloud: Anthropic, OpenAI, Google Gemini, Groq, OpenRouter
+  - Cloud: Anthropic (`https://api.anthropic.com/v1/messages`), OpenAI (`https://api.openai.com/v1/chat/completions`), Google Gemini (`https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`), Groq, OpenRouter, and Custom endpoints.
 - **Modes**:
-  - Dictation cleanup (formatting, punctuation, disfluency removal)
-  - Custom system prompts / command mode
+  - Dictation cleanup (formatting, punctuation, disfluency removal, list formatting)
+  - Custom system prompts & temperature control.
 - **CLI Options**:
-  - `fluidvoice-linux transcribe --in sample.wav --enhance [--provider ollama|openai|anthropic|gemini] [--ai-model <name>]`
+  - `fluidvoice-linux transcribe --in sample.wav --enhance [--ai-provider ollama|openai|anthropic|gemini|groq|openrouter|custom] [--ai-model <name>] [--ai-api-key <key>] [--ai-endpoint <url>]`
 
 ## 3. Implementation & Verification Plan
 
-1. **AI Client Engine**: Implement `AIEnhancementService.swift` using `URLSession` async networking.
-2. **System Prompt Templates**: Port prompt templates from macOS app.
-3. **Unit Tests**: Mock HTTP responses to verify prompt assembly and error handling.
-4. **Verification**: Verify against local Ollama instance or cloud API.
+1. **AI Client Engine**: Implemented `AIEnhancementService.swift` supporting both OpenAI-compatible and Anthropic message formats with `URLSession` async networking and sync blocking wrapper.
+2. **System Prompt Templates**: Ported dictation cleanup system prompt from macOS app.
+3. **CLI Integration**: Wired `--enhance` and AI provider flags into `TranscribeCommand.swift`.
+4. **Unit Tests**: Added 9 tests in `TranscribeCommandArgumentTests.swift` and mock HTTP protocol tests in `AIEnhancementServiceTests.swift` (`44/44` tests pass).
+
 

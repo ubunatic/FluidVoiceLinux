@@ -83,6 +83,34 @@ final class TranscribeCommandArgumentTests: XCTestCase {
         }
     }
 
+    func testParsesAIEnhancementFlags() throws {
+        let opts = try TranscribeCommand.parseArguments([
+            "--in", "/tmp/audio.wav",
+            "--enhance",
+            "--ai-provider", "gemini",
+            "--ai-model", "gemini-2.5-flash",
+            "--ai-api-key", "test_key",
+            "--ai-endpoint", "https://example.com/v1"
+        ])
+
+        XCTAssertTrue(opts.enhance)
+        XCTAssertEqual(opts.aiProvider, .gemini)
+        XCTAssertEqual(opts.aiModel, "gemini-2.5-flash")
+        XCTAssertEqual(opts.aiAPIKey, "test_key")
+        XCTAssertEqual(opts.aiEndpoint, "https://example.com/v1")
+    }
+
+    func testUnknownAIProviderThrows() {
+        XCTAssertThrowsError(
+            try TranscribeCommand.parseArguments(["--in", "/tmp/x.wav", "--ai-provider", "bogus_ai"])
+        ) { error in
+            guard case TranscribeArgumentError.unknownAIProvider(let p) = error else {
+                return XCTFail("expected unknownAIProvider, got \(error)")
+            }
+            XCTAssertEqual(p, "bogus_ai")
+        }
+    }
+
     func testDanglingFlagWithNoValueThrows() {
         XCTAssertThrowsError(
             try TranscribeCommand.parseArguments(["--in", "/tmp/x.wav", "--model"])
@@ -94,3 +122,4 @@ final class TranscribeCommandArgumentTests: XCTestCase {
         }
     }
 }
+
