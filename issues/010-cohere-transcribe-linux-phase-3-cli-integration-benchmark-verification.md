@@ -1,6 +1,6 @@
 # 010 — Cohere Transcribe Linux Phase 3: CLI integration & benchmark verification
 
-**Status**: Open
+**Status**: In Progress
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Feature
