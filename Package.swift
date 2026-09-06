@@ -55,10 +55,22 @@ targets += [
 ]
 #else
 targets += [
+    // Phase 3 (see docs/LINUX_MIGRATION_BRANCH_PLAN.md,
+    // issues/003-linux-migration-phase-3-mvp-record-audio-alsa-pipewire.md): thin C
+    // interop over ALSA's PCM capture API, mirroring the structural pattern of
+    // Sources/CoreAudioCaptureSupport (macOS-only, untouched) for the Linux side.
+    .target(
+        name: "LinuxAudioCaptureSupport",
+        path: "Sources/LinuxAudioCaptureSupport",
+        linkerSettings: [
+            .linkedLibrary("asound"),
+        ]
+    ),
     // Phase 2 canary content lives in this library target so it's unit-testable from
     // Tests/FluidVoiceLinuxCLITests without depending on the executable target.
     .target(
         name: "FluidVoiceLinuxCLICore",
+        dependencies: ["LinuxAudioCaptureSupport"],
         path: "Sources/FluidVoiceLinuxCLICore"
     ),
     .executableTarget(

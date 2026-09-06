@@ -50,6 +50,39 @@ make dnf-deps   # Fedora (sudo) — untested on this box, package names are best
 `*-devel` suffixes, `alsa-lib-devel`). Not verified on real Fedora hardware —
 flag any package name drift back to this doc.
 
+## Audio capture: ALSA, not PipeWire/PulseAudio (Phase 3)
+
+Phase 3 (`docs/LINUX_MIGRATION_BRANCH_PLAN.md`, issue 003) needed to pick a
+capture API for `Sources/LinuxAudioCaptureSupport`. Went with **ALSA**
+(`libasound`/`<alsa/asoundlib.h>`) over PipeWire's or PulseAudio's native
+client libraries:
+
+- It's the lowest common denominator — present on essentially every Linux
+  box, with or without a desktop session or PipeWire/PulseAudio daemon
+  running, unlike the higher-level session-bus-dependent APIs.
+- It mirrors this repo's existing `Sources/CoreAudioCaptureSupport` C-interop
+  structure most directly (opaque capture handle, create/read/destroy
+  lifecycle, `include/<Header>.h` + `.c` C target).
+- On a modern desktop, ALSA's `"default"` PCM device still transparently
+  routes through PipeWire's own ALSA plugin (`pipewire-alsa`) when present —
+  so using plain ALSA does not mean bypassing PipeWire on systems that run
+  it; opening `"default"` cooperates with whatever audio server owns the
+  hardware instead of fighting it for exclusive access. Opening a raw
+  `hw:`/`plughw:` device directly can conflict with PipeWire/WirePlumber if
+  it currently holds that device (observed as a transient mic dropout in
+  this dev sandbox during manual `arecord -D plughw:...` probing) — the CLI
+  and `AlsaAudioRecorder` default to `"default"`, not a raw hw device, for
+  exactly this reason. Pass `--device hw:CARD=...`/`plughw:CARD=...`
+  explicitly only when you specifically need to bypass the sound server.
+
+**Dependency check**: `libasound2-dev` (already added to `make apt-deps` in
+issue 001) is sufficient — confirmed via `pkg-config --exists alsa` and the
+presence of `/usr/include/alsa/asoundlib.h` on this Ubuntu 26.04 box, no
+PipeWire client headers needed. `libasound2-dev` pulls in the runtime
+library (`libasound2t64` on this Ubuntu release, the `t64` 64-bit-time_t
+transition package) as a dependency, so no separate runtime package is
+needed beyond what `apt-deps` already installs.
+
 ### Note: `apt install swiftlang` and the `/usr/bin/swift` symlink
 
 The `swiftlang` package's real binaries live under

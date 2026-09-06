@@ -1,9 +1,22 @@
-// Phase 2 canary for the Linux migration (see docs/LINUX_MIGRATION_BRANCH_PLAN.md and
-// issues/002-linux-migration-phase-2-hello-swift-canary-cli.md). Replaces the Phase 0
-// compile-gating stub (`print("stub")`, issue 001) with the real "hello swift" banner —
-// the go/no-go gate before investing in Phase 3 (audio capture). Banner-building logic
-// lives in FluidVoiceLinuxCLICore so it is unit-testable; this file is kept to a single
-// simple entrypoint (no subcommand/argument-parsing framework yet — that's Phase 3).
+// Phase 3 (see docs/LINUX_MIGRATION_BRANCH_PLAN.md and
+// issues/003-linux-migration-phase-3-mvp-record-audio-alsa-pipewire.md) adds the
+// `record` subcommand on top of the Phase 2 canary banner (issue 002). Per the
+// executable/library split (docs/SwiftLinux.md §3), all real logic lives in
+// FluidVoiceLinuxCLICore — this file stays a thin dispatcher with no
+// subcommand-parsing framework (hand-rolled `CommandLine.arguments`, as planned).
 import FluidVoiceLinuxCLICore
+import Foundation
 
-print(FluidVoiceLinuxCLIBanner.banner())
+let arguments = Array(CommandLine.arguments.dropFirst())
+
+if let subcommand = arguments.first {
+    switch subcommand {
+    case "record":
+        exit(RecordCommand.run(arguments: Array(arguments.dropFirst())))
+    default:
+        FileHandle.standardError.write(Data("unknown subcommand '\(subcommand)'\n".utf8))
+        exit(1)
+    }
+} else {
+    print(FluidVoiceLinuxCLIBanner.banner())
+}

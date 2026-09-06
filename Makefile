@@ -27,8 +27,8 @@ preflight: ⚙️  # check the Swift toolchain is on PATH
 build: ⚙️ preflight  # build the Linux CLI binary
 	$(SWIFT) build $(SWIFT_BUILD_FLAGS) --product $(BINARY)
 
-run: ⚙️ build  # run the freshly built binary
-	.build/release/$(BINARY)
+run: ⚙️ build  # run the freshly built binary (pass args via ARGS="record --seconds 3 --out /tmp/test.wav")
+	.build/release/$(BINARY) $(ARGS)
 
 install: ⚙️ build  # install to ~/.local/bin (user) and best-effort PREFIX/bin (system)
 	@mkdir -p $(HOME)/.local/bin
