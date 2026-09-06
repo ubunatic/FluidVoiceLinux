@@ -1,6 +1,6 @@
 # 004 — Linux migration Phase 4: MVP2 run STT model on AMD iGPU
 
-**Status**: Closed — resolved in COMMIT_SHA_PLACEHOLDER
+**Status**: Closed — resolved in 9f50d18
 **Priority**: P2 (Medium)
 **Severity**: Minor
 **Category**: Feature
