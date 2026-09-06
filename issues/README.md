@@ -8,3 +8,4 @@
 | 004 | [004-linux-migration-phase-4-mvp2-run-stt-model-on-amd-igpu.md](004-linux-migration-phase-4-mvp2-run-stt-model-on-amd-igpu.md) | Linux migration Phase 4: MVP2 run STT model on AMD iGPU | Closed — resolved in 9f50d18 |
 | 005 | [005-linux-migration-phase-5-config-packaging-ci-re-evaluation-backlog.md](005-linux-migration-phase-5-config-packaging-ci-re-evaluation-backlog.md) | Linux migration Phase 5+: config, packaging, CI re-evaluation backlog | Open |
 | 006 | [006-audible-click-pop-transient-at-recording-start-in-alsa-capture-record-subcommand.md](006-audible-click-pop-transient-at-recording-start-in-alsa-capture-record-subcommand.md) | Audible click/pop transient at recording start in ALSA capture (record subcommand) | Open |
+| 007 | [007-default-whisper-model-path-is-cwd-relative-breaks-when-installed.md](007-default-whisper-model-path-is-cwd-relative-breaks-when-installed.md) | Default whisper model path is CWD-relative, breaks when installed | Open |
