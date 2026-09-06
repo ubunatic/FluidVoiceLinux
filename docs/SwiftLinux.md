@@ -162,3 +162,22 @@ notes:
 - `issues/README.md` — current ticket status per phase; each phase gets
   its own issue, closed with a `## Resolution` section documenting real
   verification output (follow that pattern for new phase tickets).
+
+## 7. A second C-interop pattern: `.systemLibrary` (Phase 4)
+
+Phase 4 (`Sources/LinuxWhisperSupport`, wrapping the apt `libwhisper-dev`
+package — see `docs/LINUX_SETUP.md` for the backend decision) uses a
+different SwiftPM target type than Phase 3's ALSA target
+(`Sources/LinuxAudioCaptureSupport`, a plain `.target` with a hand-written
+C shim `.c` file): a `.systemLibrary` target, whose whole content is a
+`module.modulemap` + a one-line `shim.h` that just `#include`s the vendor's
+own C header (`<whisper.h>`) and a `pkgConfig:` field pointing at the
+package's shipped `.pc` file. Use `.systemLibrary` instead of a hand-written
+shim when the system library's own public header is *already* a clean,
+directly-Swift-importable C API (`extern "C"`, no C++ types, no macros the
+Clang importer chokes on) — check this first (`grep -n
+'#ifdef __cplusplus' <header>.h`) before writing a shim you don't need.
+`Sources/LinuxAudioCaptureSupport` still needed its shim because ALSA's
+own API surface (`snd_pcm_*`) isn't the shape this CLI wants exposed
+(blocking read loop, error code translation, opaque handle) — that's a
+judgment call about API design, not just C-vs-C++ header compatibility.

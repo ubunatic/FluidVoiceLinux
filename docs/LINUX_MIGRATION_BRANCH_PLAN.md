@@ -90,19 +90,26 @@ Xcode) following `~/.claude/docs/Make.md`:
 - Deliverable: recorded WAV file is playable and has correct
   sample rate/channel count.
 
-## Phase 4: MVP2 — "run the model on the AMD iGPU"
-- Investigate whether `transcribe-cpp-swift` (whisper.cpp wrapper,
-  already a dependency) supports a Vulkan or ROCm backend on Linux for
-  AMD iGPUs — whisper.cpp upstream has Vulkan support, which is the
-  most portable path for AMD iGPU without full ROCm setup.
+## Phase 4: MVP2 — "run the model on the AMD iGPU" — done, see issue 004
+- **Resolved differently than originally planned**: rather than
+  `transcribe-cpp-swift` (already a macOS-only dependency), Ubuntu's
+  `universe` repo ships whisper.cpp itself as apt packages
+  (`libwhisper-dev`/`libwhisper1`) with a dynamically-loaded ggml Vulkan
+  backend (`libggml0-backend-vulkan`) that already picks up the AMD iGPU
+  via Mesa's RADV driver with zero source rebuilding — see
+  `docs/LINUX_SETUP.md` "STT backend" section for the full decision and
+  verification evidence, and `Sources/LinuxWhisperSupport` for the
+  resulting `.systemLibrary` C-interop target.
 - `FluidAudio` (CoreML-based diarization/VAD) is very likely macOS-only
   — plan to drop it from the Linux target and either skip
   diarization/VAD for MVP2 or find a portable replacement later.
-- CLI subcommand: `fluidvoice-linux transcribe --in out.wav` using the
-  GPU-backed whisper.cpp path, falling back to CPU if Vulkan/ROCm isn't
-  available.
+- CLI subcommand: `fluidvoice-linux transcribe --in out.wav [--model
+  path] [--no-gpu]` — GPU-backed by default via ggml's own automatic
+  CPU fallback on GPU-init failure (verified for real, not just coded),
+  `--no-gpu` forces CPU-only explicitly.
 - Deliverable: transcribing the Phase 3 WAV produces text, and logs
-  confirm GPU (not CPU) execution on the AMD iGPU.
+  confirm GPU (not CPU) execution on the AMD iGPU — done; see issue
+  004's Resolution section for the transcript + timing evidence.
 
 ## Phase 5+ (and so on)
 - Config/settings persistence (headless equivalent of `Persistence/`)
@@ -144,5 +151,7 @@ docs/
   on Linux (network/manifest level) or only fail to *compile*? This
   determines whether Phase 0 needs a dependency-level split too, not
   just a target-level one.
-- Confirm actual Vulkan/ROCm support status in the pinned
-  `transcribe-cpp-swift@0.1.2` before committing to Phase 4 approach.
+- ~~Confirm actual Vulkan/ROCm support status in the pinned
+  `transcribe-cpp-swift@0.1.2` before committing to Phase 4 approach.~~
+  Resolved: not needed — apt's own `libwhisper-dev` + ggml Vulkan backend
+  worked directly, see Phase 4 above and `docs/LINUX_SETUP.md`.

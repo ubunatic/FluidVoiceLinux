@@ -63,6 +63,12 @@ apt-deps: ⚙️  # install Swift toolchain + build deps on Debian/Ubuntu (sudo)
 		libncurses-dev \
 		libedit-dev \
 		libasound2-dev \
+		libwhisper-dev \
+		libwhisper1 \
+		libggml-dev \
+		libggml0-backend-vulkan \
+		mesa-vulkan-drivers \
+		libvulkan1 \
 		curl \
 		git
 
@@ -78,5 +84,8 @@ dnf-deps: ⚙️  # install Swift toolchain + build deps on Fedora (sudo, untest
 		ncurses-devel \
 		libedit-devel \
 		alsa-lib-devel \
+		whisper-cpp-devel \
+		mesa-vulkan-drivers \
+		vulkan-loader \
 		curl \
 		git

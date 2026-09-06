@@ -66,11 +66,26 @@ targets += [
             .linkedLibrary("asound"),
         ]
     ),
+    // Phase 4 (see docs/LINUX_MIGRATION_BRANCH_PLAN.md,
+    // issues/004-linux-migration-phase-4-mvp2-run-stt-model-on-amd-igpu.md): system
+    // library wrapper over the apt-packaged `libwhisper-dev`/`libwhisper1`
+    // (whisper.cpp 1.8.3, Ubuntu universe). whisper.h is already a clean C API, so
+    // (unlike LinuxAudioCaptureSupport) no hand-written C shim is needed beyond a
+    // module map re-exporting the system header — see docs/SwiftLinux.md for the
+    // backend decision (direct libwhisper linking vs. transcribe-cpp-swift).
+    .systemLibrary(
+        name: "CWhisper",
+        path: "Sources/LinuxWhisperSupport",
+        pkgConfig: "whisper",
+        providers: [
+            .apt(["libwhisper-dev"]),
+        ]
+    ),
     // Phase 2 canary content lives in this library target so it's unit-testable from
     // Tests/FluidVoiceLinuxCLITests without depending on the executable target.
     .target(
         name: "FluidVoiceLinuxCLICore",
-        dependencies: ["LinuxAudioCaptureSupport"],
+        dependencies: ["LinuxAudioCaptureSupport", "CWhisper"],
         path: "Sources/FluidVoiceLinuxCLICore"
     ),
     .executableTarget(
