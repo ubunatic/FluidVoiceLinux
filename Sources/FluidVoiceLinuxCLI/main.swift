@@ -15,6 +15,8 @@ if let subcommand = arguments.first {
         exit(RecordCommand.run(arguments: Array(arguments.dropFirst())))
     case "transcribe":
         exit(TranscribeCommand.run(arguments: Array(arguments.dropFirst())))
+    case "dictate":
+        exit(DictateCommand.run(arguments: Array(arguments.dropFirst())))
     default:
         FileHandle.standardError.write(Data("unknown subcommand '\(subcommand)'\n".utf8))
         exit(1)
