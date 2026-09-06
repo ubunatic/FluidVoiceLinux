@@ -55,10 +55,21 @@ targets += [
 ]
 #else
 targets += [
-    // Phase 0 compile-gating placeholder only — Phase 2 owns the real canary content.
+    // Phase 2 canary content lives in this library target so it's unit-testable from
+    // Tests/FluidVoiceLinuxCLITests without depending on the executable target.
+    .target(
+        name: "FluidVoiceLinuxCLICore",
+        path: "Sources/FluidVoiceLinuxCLICore"
+    ),
     .executableTarget(
         name: "FluidVoiceLinuxCLI",
+        dependencies: ["FluidVoiceLinuxCLICore"],
         path: "Sources/FluidVoiceLinuxCLI"
+    ),
+    .testTarget(
+        name: "FluidVoiceLinuxCLITests",
+        dependencies: ["FluidVoiceLinuxCLICore"],
+        path: "Tests/FluidVoiceLinuxCLITests"
     ),
 ]
 #endif
