@@ -33,12 +33,16 @@ run: ⚙️ build  # run the freshly built binary (pass args via ARGS="record --
 install: ⚙️ build  # install to ~/.local/bin (user) and best-effort PREFIX/bin (system)
 	@mkdir -p $(HOME)/.local/bin
 	@install -m 0755 .build/release/$(BINARY) $(HOME)/.local/bin/$(BINARY) && \
-	  echo "✅ Installed to $(HOME)/.local/bin/$(BINARY)"
-	@sudo install -m 0755 .build/release/$(BINARY) $(PREFIX)/bin/$(BINARY) && \
+	  ln -sf $(HOME)/.local/bin/$(BINARY) $(HOME)/.local/bin/fluidvoice-linux && \
+	  ln -sf $(HOME)/.local/bin/$(BINARY) $(HOME)/.local/bin/fluidvoice && \
+	  echo "✅ Installed to $(HOME)/.local/bin/$(BINARY) (with fluidvoice-linux & fluidvoice aliases)"
+	@sudo install -m 0755 .build/release/$(BINARY) $(PREFIX)/bin/$(BINARY) 2>/dev/null && \
+	  sudo ln -sf $(PREFIX)/bin/$(BINARY) $(PREFIX)/bin/fluidvoice-linux 2>/dev/null && \
+	  sudo ln -sf $(PREFIX)/bin/$(BINARY) $(PREFIX)/bin/fluidvoice 2>/dev/null && \
 	  echo "✅ Installed for all users" || echo "⚠️ System install skipped (no sudo)"
 
 uninstall: ⚙️  # remove installed binary from user and system paths
-	rm -f $(HOME)/.local/bin/$(BINARY) $(PREFIX)/bin/$(BINARY)
+	rm -f $(HOME)/.local/bin/$(BINARY) $(HOME)/.local/bin/fluidvoice-linux $(HOME)/.local/bin/fluidvoice $(PREFIX)/bin/$(BINARY) $(PREFIX)/bin/fluidvoice-linux $(PREFIX)/bin/fluidvoice
 
 check: ⚙️ preflight  # run tests for Linux-eligible targets (excludes macOS-only Tests/FluidDictationIntegrationTests)
 	@$(SWIFT) test || echo "⚠️  no Linux test target yet — expected pre-Phase 5, see docs/LINUX_MIGRATION_BRANCH_PLAN.md"
