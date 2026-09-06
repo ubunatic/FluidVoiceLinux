@@ -127,4 +127,26 @@ public enum ModelPathResolver {
         if let home, !home.isEmpty { return "\(home)/\(homeDataHomeSuffix)/\(xdgNemotronModelSubpath)" }
         return "\(homeDataHomeSuffix)/\(xdgNemotronModelSubpath)"
     }
+
+    public static let repoRelativeSileroVadPath = "models/silero_vad.onnx"
+    static let xdgSileroVadSubpath = "fluidvoice/models/silero_vad.onnx"
+    static let crispasrSileroVadCacheSubpath = ".cache/crispasr/silero_vad.onnx"
+
+    public static func resolveSileroVAD(
+        explicit: String?,
+        fileExists: (String) -> Bool,
+        xdgDataHome: String?,
+        home: String?
+    ) -> String {
+        if let explicit { return explicit }
+        if fileExists(repoRelativeSileroVadPath) { return repoRelativeSileroVadPath }
+        if let home, !home.isEmpty {
+            let cachePath = "\(home)/\(crispasrSileroVadCacheSubpath)"
+            if fileExists(cachePath) { return cachePath }
+        }
+        if let xdgDataHome, !xdgDataHome.isEmpty { return "\(xdgDataHome)/\(xdgSileroVadSubpath)" }
+        if let home, !home.isEmpty { return "\(home)/\(homeDataHomeSuffix)/\(xdgSileroVadSubpath)" }
+        return "\(homeDataHomeSuffix)/\(xdgSileroVadSubpath)"
+    }
 }
+
