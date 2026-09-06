@@ -15,6 +15,9 @@ DerivedData/
 
 ## Swift Package Manager
 .build/
+
+## Linux CLI: whisper models (large binaries, fetched locally per docs/LINUX_SETUP.md)
+/models/
 *.moved-aside
 *.pbxuser
 !default.pbxuser
