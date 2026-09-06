@@ -1,6 +1,6 @@
 # 003 — Linux migration Phase 3: MVP record audio (ALSA/PipeWire)
 
-**Status**: Blocked — real hardware capture end-to-end not verified in this sandbox
+**Status**: Closed — resolved in bdb287f, human-verified end-to-end
 **Priority**: P2 (Medium)
 **Severity**: Minor
 **Category**: Feature
@@ -181,3 +181,25 @@ using the default ALSA device, then verify the resulting file with
 playable, non-silent WAV with the expected ~3s duration, 16000 Hz, mono,
 16-bit fields, and update this ticket's Status to
 `Closed — resolved in <sha>` once that's done.
+
+**Human end-to-end verification (2026-09-07)**: the user ran
+`make run ARGS="record ... --out /tmp/test.wav"` on this box directly
+(outside the sandbox's action-classifier restriction that blocked the
+agent's own attempt above) using the default `"default"` ALSA/PipeWire
+device — no raw `hw:`/`plughw:` device involved, consistent with the
+mic-safety constraint. Result verified:
+
+```
+$ file /tmp/test.wav
+RIFF (little-endian) data, WAVE audio, Microsoft PCM, 16 bit, mono 16000 Hz
+$ ffprobe /tmp/test.wav
+Duration: 00:00:10.00, bitrate: 256 kb/s
+Stream #0:0: Audio: pcm_s16le, 16000 Hz, 1 channels, s16, 256 kb/s
+```
+
+Python `wave` module parse: `channels=1 rate=16000 sampwidth=2
+nframes=160000`; peak sample amplitude `9767` of `32767` — real,
+non-silent captured audio, not silence or garbage. This closes the
+"human needs to verify on real hardware" gap left by the agent.
+Sample copied to `~/.config/fluidvoice/dev/samples/test.wav` for reuse
+in later Phase 4 dev/testing.
