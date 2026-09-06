@@ -1,6 +1,6 @@
 # 003 — Linux migration Phase 3: MVP record audio (ALSA/PipeWire)
 
-**Status**: Open
+**Status**: In Progress
 **Priority**: P2 (Medium)
 **Severity**: Minor
 **Category**: Feature
