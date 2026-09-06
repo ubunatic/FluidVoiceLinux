@@ -241,3 +241,20 @@ running `make apt-deps` gets the same packages installed the normal way at
 their real system paths, and the `Package.swift` `pkgConfig`/`providers`
 declaration on `CWhisper` reflects that normal, real install layout — not
 the scratch workaround.
+
+## Cohere Transcribe backend: Conformer GGUF via `crispasr` (Issues 008-010)
+
+Issues 008–010 brought **Cohere Transcribe** (`CohereLabs/cohere-transcribe-03-2026`, #1 on Hugging Face Open ASR Leaderboard) to Linux:
+
+- **Model format**: Quantized GGUF (`cohere-transcribe-q4_k.gguf`, 1.51 GB) from `cstr/cohere-transcribe-03-2026-GGUF`.
+- **Runtime architecture**: Managed via `crispasr` Python/ggml worker to avoid symbol collisions between older distro `libggml` (0.9.11) and modern `libggml` (0.17.0).
+- **CLI Usage**:
+  ```sh
+  # Transcribe with Cohere Transcribe (auto-locates ~/.cache/crispasr/cohere-transcribe-q4_k.gguf)
+  fluidvoice-linux transcribe --in sample.wav --backend cohere [--lang en]
+
+  # Transcribe with Whisper (default)
+  fluidvoice-linux transcribe --in sample.wav --backend whisper
+  ```
+- **Performance**: Transcribes 10s audio in ~2.2s on CPU with Conformer accuracy.
+

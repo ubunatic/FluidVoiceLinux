@@ -78,4 +78,50 @@ final class ModelPathResolutionTests: XCTestCase {
 
         XCTAssertEqual(resolved, ".local/share/fluidvoice/models/ggml-base.en.bin")
     }
+
+    func testCohereResolutionPriority() {
+        // Explicit wins
+        XCTAssertEqual(
+            ModelPathResolver.resolveCohere(
+                explicit: "/custom/cohere.gguf",
+                fileExists: { _ in true },
+                xdgDataHome: "/data",
+                home: "/home/user"
+            ),
+            "/custom/cohere.gguf"
+        )
+
+        // Repo relative wins if exists
+        XCTAssertEqual(
+            ModelPathResolver.resolveCohere(
+                explicit: nil,
+                fileExists: { $0 == ModelPathResolver.repoRelativeCohereModelPath },
+                xdgDataHome: "/data",
+                home: "/home/user"
+            ),
+            ModelPathResolver.repoRelativeCohereModelPath
+        )
+
+        // Crisp cache wins if exists
+        XCTAssertEqual(
+            ModelPathResolver.resolveCohere(
+                explicit: nil,
+                fileExists: { $0 == "/home/user/.cache/crispasr/cohere-transcribe-q4_k.gguf" },
+                xdgDataHome: "/data",
+                home: "/home/user"
+            ),
+            "/home/user/.cache/crispasr/cohere-transcribe-q4_k.gguf"
+        )
+
+        // XDG data home fallback
+        XCTAssertEqual(
+            ModelPathResolver.resolveCohere(
+                explicit: nil,
+                fileExists: { _ in false },
+                xdgDataHome: "/data",
+                home: "/home/user"
+            ),
+            "/data/fluidvoice/models/cohere-transcribe-q4_k.gguf"
+        )
+    }
 }

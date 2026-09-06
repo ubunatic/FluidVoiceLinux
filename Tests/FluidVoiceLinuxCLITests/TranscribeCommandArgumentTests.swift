@@ -50,6 +50,29 @@ final class TranscribeCommandArgumentTests: XCTestCase {
         }
     }
 
+    func testParsesBackendAndLanguage() throws {
+        let options = try TranscribeCommand.parseArguments([
+            "--in", "/tmp/audio.wav",
+            "--backend", "cohere",
+            "--lang", "fr",
+        ])
+
+        XCTAssertEqual(options.inputPath, "/tmp/audio.wav")
+        XCTAssertEqual(options.backend, .cohere)
+        XCTAssertEqual(options.language, "fr")
+    }
+
+    func testUnknownBackendThrows() {
+        XCTAssertThrowsError(
+            try TranscribeCommand.parseArguments(["--in", "/tmp/x.wav", "--backend", "unknown_engine"])
+        ) { error in
+            guard case TranscribeArgumentError.unknownBackend(let b) = error else {
+                return XCTFail("expected unknownBackend, got \(error)")
+            }
+            XCTAssertEqual(b, "unknown_engine")
+        }
+    }
+
     func testDanglingFlagWithNoValueThrows() {
         XCTAssertThrowsError(
             try TranscribeCommand.parseArguments(["--in", "/tmp/x.wav", "--model"])

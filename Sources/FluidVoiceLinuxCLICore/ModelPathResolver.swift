@@ -22,6 +22,10 @@ public enum ModelPathResolver {
     static let xdgModelSubpath = "fluidvoice/models/ggml-base.en.bin"
     static let homeDataHomeSuffix = ".local/share"
 
+    public static let repoRelativeCohereModelPath = "models/cohere-transcribe-q4_k.gguf"
+    static let xdgCohereModelSubpath = "fluidvoice/models/cohere-transcribe-q4_k.gguf"
+    static let crispasrCacheSubpath = ".cache/crispasr/cohere-transcribe-q4_k.gguf"
+
     public static func resolve(
         explicit: String?,
         fileExists: (String) -> Bool,
@@ -48,5 +52,37 @@ public enum ModelPathResolver {
         // the XDG default suffix. Should not happen in practice (every real
         // login shell sets $HOME), but keeps this function total.
         return "\(homeDataHomeSuffix)/\(xdgModelSubpath)"
+    }
+
+    public static func resolveCohere(
+        explicit: String?,
+        fileExists: (String) -> Bool,
+        xdgDataHome: String?,
+        home: String?
+    ) -> String {
+        if let explicit {
+            return explicit
+        }
+
+        if fileExists(repoRelativeCohereModelPath) {
+            return repoRelativeCohereModelPath
+        }
+
+        if let home, !home.isEmpty {
+            let crispCache = "\(home)/\(crispasrCacheSubpath)"
+            if fileExists(crispCache) {
+                return crispCache
+            }
+        }
+
+        if let xdgDataHome, !xdgDataHome.isEmpty {
+            return "\(xdgDataHome)/\(xdgCohereModelSubpath)"
+        }
+
+        if let home, !home.isEmpty {
+            return "\(home)/\(homeDataHomeSuffix)/\(xdgCohereModelSubpath)"
+        }
+
+        return "\(homeDataHomeSuffix)/\(xdgCohereModelSubpath)"
     }
 }
