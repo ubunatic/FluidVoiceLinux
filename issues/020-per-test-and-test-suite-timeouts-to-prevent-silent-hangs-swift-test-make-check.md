@@ -1,6 +1,6 @@
 # 020 — Per-test and test-suite timeouts to prevent silent hangs (swift test / make check)
 
-**Status**: Closed — per-test watchdog + suite-level `timeout` wrapper implemented and verified
+**Status**: Closed — Per-test watchdog (invokeTest override) + suite-level timeout wrapper (scripts/run-tests-with-timeout.sh) implemented and verified with dummy-hang regression proofs; executionTimeAllowance confirmed unsupported on Linux XCTest, swift-testing timeLimit rejected as too disruptive/coarse
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Infrastructure
