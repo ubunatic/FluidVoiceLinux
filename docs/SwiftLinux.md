@@ -240,3 +240,42 @@ samples/` directory by hand, for storing test recordings during Phase
 it — it's a human/agent scratch convention, not a pattern to follow in
 actual CLI code. Don't confuse it with the `$XDG_DATA_HOME` default
 above.
+
+## 9. SOTA ASR Inference via GGUF Models & GGML ABI Symbol Collisions
+
+FluidVoice on Linux supports four STT backends:
+- **NVIDIA Parakeet TDT v3** (`--backend parakeet`): Token-and-Duration Transducer, the macOS app's #1 default model (RTF: **0.104x**).
+- **Cohere Transcribe** (`--backend cohere`): High-accuracy multilingual model (RTF: **0.136x**).
+- **Nemotron Speech 3.5** (`--backend nemotron`): Low-latency streaming ASR (RTF: **0.206x**).
+- **Whisper** (`--backend whisper`): Vulkan iGPU accelerated (RTF: **0.025x**).
+
+**GGML Symbol Collision Lesson**: The system `libwhisper-dev` package links against older `libggml-base.so.0.9.11`, whereas newer GGUF runtimes (`libcrispasr.so`) link against `ggml 0.17.0`. When loaded into the same process via `dlopen()`, symbol collisions in `ggml_context` and tensor layout structs caused `ggml_abort()`.
+*Solution*: Execute newer GGUF engines in an isolated worker process (`Process()`), preventing memory corruption while maintaining sub-second inference speed.
+
+## 10. Real-Time Voice Activity Detection (VAD) & Audio Segmentation
+
+The Linux pipeline implements `VoiceActivityDetector.swift`:
+1. **Silero VAD (ONNX Runtime)**: Evaluates audio frames using `silero_vad.onnx` (cached at `~/.cache/crispasr/silero_vad.onnx`), achieving **33ms** detection time per 10s of audio.
+2. **Energy VAD**: A pure Swift, zero-dependency RMS energy evaluator with dynamic frame hangover used for headless unit tests and ultra-low-latency fallback.
+3. **Audio Segmentation**: `AudioSegmenter` splits continuous audio streams into discrete speech chunks with pre/post `speechPadMs` (100ms) to ensure leading and trailing consonants are preserved.
+
+## 11. LLM AI Post-Enhancement & `FoundationNetworking` on Linux
+
+`AIEnhancementService.swift` provides headless text cleanup, disfluency removal, and formatting via local or cloud LLMs (`--enhance`).
+
+**Linux Swift Gotcha**: Unlike macOS where networking types are in `Foundation`, Linux Swift separates networking into `FoundationNetworking`. Always guard network imports:
+```swift
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+```
+Supported providers: Local **Ollama** (`http://localhost:11434`), **Anthropic Claude**, **OpenAI**, **Google Gemini**, **Groq**, **OpenRouter**, and Custom OpenAI-compatible endpoints.
+
+## 12. Linux Desktop Output Drivers (`TextOutputDriver`)
+
+`TextOutputDriver.swift` supports three output targets:
+- `--stdout`: Standard terminal printing.
+- `--clipboard` / `--copy`: Direct clipboard population via `wl-copy` (Wayland) or `xclip` / `xsel` (X11).
+  - *Gotcha*: On Wayland, `wl-copy` forks into a background daemon to serve selections. Calling `wl-copy --trim-newline <text>` as process arguments without blocking on standard input pipes allows instant return without hanging parent processes.
+- `--type` / `--type-keystrokes`: Simulates direct typing into the active application window using `wtype` (Wayland) or `xdotool` / `ydotool` (X11/universal).
+

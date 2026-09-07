@@ -6,15 +6,21 @@ stream that runs alongside the macOS app, without disturbing macOS
 release work. Not a UI port — Linux target is CLI-only.
 
 ## Status (as of 2026-09-07)
-Phases 0-4 are **done** — canary, `record`, and GPU-accelerated
-`transcribe` all work end-to-end on real hardware, human-verified (not
-just agent-sandbox-verified). See `issues/001`-`004` (all closed) and
-`issues/007` (a Phase 4 follow-up, also closed). Open: `issues/005`
-(Phase 5+ backlog, not started) and `issues/006` (a click/pop transient
-found in real captured audio at recording start — open, unfixed,
-intentionally deferred). `docs/SwiftLinux.md` has the accumulated
-"how Swift-on-Linux actually behaves" reference distilled from this
-work; read it before starting new Linux CLI work.
+Phases 0-6 are **done** — canary, `record`, GPU-accelerated `transcribe`
+(Whisper on Vulkan, NVIDIA Parakeet TDT v3, Cohere Transcribe, Nemotron Speech 3.5),
+Silero VAD segmentation, LLM AI post-enhancement (`--enhance` via Ollama/Claude/Gemini/OpenAI),
+and live `dictate` with clipboard/typing output drivers all work end-to-end on real
+hardware and pass 55/55 unit/integration tests.
+
+See `issues/001`-`004`, `007`-`015` (all closed).
+Open backlog:
+- `issues/005` (Phase 5+ packaging/config persistence)
+- `issues/006` (transient click/pop at recording start)
+- `issues/016` (Wayland virtual keyboard protocol fallback on GNOME/Mutter)
+- `issues/017` (continuous streaming dictation loop in `dictate` subcommand)
+
+`docs/SwiftLinux.md` has the accumulated "how Swift-on-Linux actually behaves"
+reference distilled from this work; read it before starting new Linux CLI work.
 
 ## Branch Strategy
 - **Correction, actual practice**: despite the branch name below,
