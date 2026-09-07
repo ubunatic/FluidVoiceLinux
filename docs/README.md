@@ -47,10 +47,12 @@ explicitly `git add -f`'d — every file listed above is force-tracked.
 When adding a new project evergreen or feedback note, remember
 `git add -f`, or it silently won't be committed.
 
-## No `docs/studies/` yet
+## Case studies (`docs/studies/`)
 
-`docs/AgenticLoop.md`'s retrospective practice references a
-`docs/studies/` directory and a "studies table" in this index —
-neither exists in this repo yet. Add both together if/when the first
-retrospective study is written (see the `story` skill); don't add an
-empty table pre-emptively.
+Retrospectives written via the `story` skill — candid session
+post-mortems used as research material for refining evergreen docs and
+harness rules.
+
+| Date | Study | Summary |
+|---|---|---|
+| 2026-09-07 | [swift-token-burn.md](studies/2026-09-07-swift-token-burn.md) | A fresh-sprint subagent burned 202k tokens diagnosing a `wl-copy` stdio-inheritance hang in `swift test` with no timeout anywhere to bound the search; the subagent correctly refused to revert its verified fix when a coordinator escalation was based on stale state. |
