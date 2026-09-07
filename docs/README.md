@@ -56,3 +56,4 @@ harness rules.
 | Date | Study | Summary |
 |---|---|---|
 | 2026-09-07 | [swift-token-burn.md](studies/2026-09-07-swift-token-burn.md) | A fresh-sprint subagent burned 202k tokens diagnosing a `wl-copy` stdio-inheritance hang in `swift test` with no timeout anywhere to bound the search; the subagent correctly refused to revert its verified fix when a coordinator escalation was based on stale state. |
+| 2026-09-07 | [linux-migration-total-cost.md](studies/2026-09-07-linux-migration-total-cost.md) | Total Claude Code cost of the ~2-day from-scratch Linux CLI port: $13.10 measured for one session, ~$25-45 estimated for the other (only 2 local session transcripts exist) — total ~$40-60 across both known sessions. |
