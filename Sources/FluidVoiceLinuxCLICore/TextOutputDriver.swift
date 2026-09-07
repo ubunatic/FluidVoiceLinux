@@ -55,6 +55,17 @@ public enum TextOutputDriver {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: tool)
 
+        if tool.hasSuffix("wl-copy") {
+            process.arguments = ["--trim-newline", text]
+            do {
+                try process.run()
+                // wl-copy forks a daemon on Wayland to serve the selection
+            } catch {
+                throw TextOutputDriverError.executionFailed(error.localizedDescription)
+            }
+            return
+        }
+
         if tool.hasSuffix("xclip") {
             process.arguments = ["-selection", "clipboard"]
         } else if tool.hasSuffix("xsel") {

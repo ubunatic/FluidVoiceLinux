@@ -26,6 +26,7 @@ public struct TranscribeOptions: Equatable {
     public let aiModel: String?
     public let aiAPIKey: String?
     public let aiEndpoint: String?
+    public let outputTarget: TextOutputTarget
 
     public static let defaultModelPath = ModelPathResolver.repoRelativeModelPath
 
@@ -39,7 +40,8 @@ public struct TranscribeOptions: Equatable {
         aiProvider: AIProvider = .ollama,
         aiModel: String? = nil,
         aiAPIKey: String? = nil,
-        aiEndpoint: String? = nil
+        aiEndpoint: String? = nil,
+        outputTarget: TextOutputTarget = .stdout
     ) {
         self.inputPath = inputPath
         self.modelPath = modelPath
@@ -51,6 +53,7 @@ public struct TranscribeOptions: Equatable {
         self.aiModel = aiModel
         self.aiAPIKey = aiAPIKey
         self.aiEndpoint = aiEndpoint
+        self.outputTarget = outputTarget
     }
 }
 
@@ -84,7 +87,8 @@ public enum TranscribeCommand {
     /// `--lang <code>` (optional, default: en), `--no-gpu` (optional),
     /// `--enhance` (optional, default: false),
     /// `--ai-provider ollama|openai|anthropic|gemini|groq|openrouter|custom` (optional, default: ollama),
-    /// `--ai-model <name>` (optional), `--ai-api-key <key>` (optional), `--ai-endpoint <url>` (optional).
+    /// `--ai-model <name>` (optional), `--ai-api-key <key>` (optional), `--ai-endpoint <url>` (optional),
+    /// `--clipboard` / `--copy`, `--type` / `--type-keystrokes`, `--stdout`.
     public static func parseArguments(_ arguments: [String]) throws -> TranscribeOptions {
         var inputPath: String?
         var modelPath: String?
@@ -96,6 +100,7 @@ public enum TranscribeCommand {
         var aiModel: String?
         var aiAPIKey: String?
         var aiEndpoint: String?
+        var outputTarget: TextOutputTarget = .stdout
 
         var index = 0
         while index < arguments.count {
@@ -140,6 +145,12 @@ public enum TranscribeCommand {
                 aiAPIKey = try nextValue()
             case "--ai-endpoint":
                 aiEndpoint = try nextValue()
+            case "--type", "--type-keystrokes":
+                outputTarget = .typing
+            case "--clipboard", "--copy":
+                outputTarget = .clipboard
+            case "--stdout":
+                outputTarget = .stdout
             default:
                 throw TranscribeArgumentError.unknownArgument(argument)
             }
@@ -160,7 +171,8 @@ public enum TranscribeCommand {
             aiProvider: aiProvider,
             aiModel: aiModel,
             aiAPIKey: aiAPIKey,
-            aiEndpoint: aiEndpoint
+            aiEndpoint: aiEndpoint,
+            outputTarget: outputTarget
         )
     }
 
@@ -234,7 +246,7 @@ public enum TranscribeCommand {
                     result.inferenceSeconds
                 )
             )
-            let rawText = result.text
+            var finalText = result.text
             if options.enhance {
                 let aiConfig = AIEnhancementConfiguration(
                     provider: options.aiProvider,
@@ -244,14 +256,17 @@ public enum TranscribeCommand {
                 )
                 print("Enhancing transcription with \(options.aiProvider.rawValue)...")
                 do {
-                    let enhanced = try AIEnhancementService.enhanceBlocking(text: rawText, config: aiConfig)
-                    print(enhanced)
+                    finalText = try AIEnhancementService.enhanceBlocking(text: result.text, config: aiConfig)
                 } catch {
                     FileHandle.standardError.write(Data("transcribe: AI enhancement warning: \(error)\n".utf8))
-                    print(rawText)
                 }
-            } else {
-                print(rawText)
+            }
+
+            do {
+                try TextOutputDriver.emit(finalText, target: options.outputTarget)
+            } catch {
+                FileHandle.standardError.write(Data("transcribe: output failed: \(error)\n".utf8))
+                print(finalText)
             }
             return 0
 
@@ -313,7 +328,7 @@ public enum TranscribeCommand {
                 )
             )
 
-            let rawText = result.text
+            var finalText = result.text
             if options.enhance {
                 let aiConfig = AIEnhancementConfiguration(
                     provider: options.aiProvider,
@@ -323,14 +338,17 @@ public enum TranscribeCommand {
                 )
                 print("Enhancing transcription with \(options.aiProvider.rawValue)...")
                 do {
-                    let enhanced = try AIEnhancementService.enhanceBlocking(text: rawText, config: aiConfig)
-                    print(enhanced)
+                    finalText = try AIEnhancementService.enhanceBlocking(text: result.text, config: aiConfig)
                 } catch {
                     FileHandle.standardError.write(Data("transcribe: AI enhancement warning: \(error)\n".utf8))
-                    print(rawText)
                 }
-            } else {
-                print(rawText)
+            }
+
+            do {
+                try TextOutputDriver.emit(finalText, target: options.outputTarget)
+            } catch {
+                FileHandle.standardError.write(Data("transcribe: output failed: \(error)\n".utf8))
+                print(finalText)
             }
             return 0
         }

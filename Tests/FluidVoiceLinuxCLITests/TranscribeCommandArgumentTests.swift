@@ -111,6 +111,20 @@ final class TranscribeCommandArgumentTests: XCTestCase {
         }
     }
 
+    func testParsesOutputTargetFlags() throws {
+        let clipOpts = try TranscribeCommand.parseArguments([
+            "--in", "/tmp/audio.wav",
+            "--clipboard"
+        ])
+        XCTAssertEqual(clipOpts.outputTarget, .clipboard)
+
+        let typeOpts = try TranscribeCommand.parseArguments([
+            "--in", "/tmp/audio.wav",
+            "--type"
+        ])
+        XCTAssertEqual(typeOpts.outputTarget, .typing)
+    }
+
     func testDanglingFlagWithNoValueThrows() {
         XCTAssertThrowsError(
             try TranscribeCommand.parseArguments(["--in", "/tmp/x.wav", "--model"])
