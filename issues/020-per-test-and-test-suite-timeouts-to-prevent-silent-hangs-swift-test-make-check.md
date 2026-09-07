@@ -1,6 +1,6 @@
 # 020 — Per-test and test-suite timeouts to prevent silent hangs (swift test / make check)
 
-**Status**: Open
+**Status**: In Progress — fresh-sprint: per-test and suite-level timeouts
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Infrastructure
