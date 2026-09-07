@@ -1,6 +1,6 @@
 # 017 — Continuous streaming dictation loop in dictate subcommand without premature cutoff
 
-**Status**: Open
+**Status**: In Progress — fresh-sprint: continuous streaming dictation loop
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Bug
