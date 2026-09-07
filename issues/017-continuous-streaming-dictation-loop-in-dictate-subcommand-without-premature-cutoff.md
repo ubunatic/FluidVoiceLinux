@@ -1,6 +1,6 @@
 # 017 — Continuous streaming dictation loop in dictate subcommand without premature cutoff
 
-**Status**: In Progress — fresh-sprint: continuous streaming dictation loop
+**Status**: Closed — streaming dictation implemented and verified
 **Priority**: P1 (High)
 **Severity**: Major
 **Category**: Bug
@@ -60,12 +60,14 @@ Users expect `dictate` to behave as a continuous dictation session:
 ## 3. Scope & Acceptance Criteria
 
 ### Acceptance Criteria
-- [ ] `fluidvoice-linux dictate` (without `--seconds`) continuously streams microphone audio and does not exit after 5s or 10s of speech.
-- [ ] Utterances separated by natural pauses are segmented dynamically via VAD and transcribed incrementally.
-- [ ] Transcribed text is output to stdout, clipboard, or typed via keystrokes as each speech chunk finishes.
-- [ ] If `--seconds` / `--duration` is specified, dictation runs up to the requested duration while still processing chunks incrementally.
-- [ ] Clean termination and resource cleanup (ALSA capture handle, transcription background tasks) on SIGINT / Ctrl+C.
-- [ ] Unit tests for continuous streaming recorder and incremental VAD segmentation state machine.
+- [x] `fluidvoice-linux dictate` (without `--seconds`) continuously streams microphone audio and does not exit after 5s or 10s of speech. (`AlsaAudioStream` + `StreamingDictationLoop` loop until end-of-stream/SIGINT/max-duration; no fixed-duration `record()` call remains in the `dictate` path.)
+- [x] Utterances separated by natural pauses are segmented dynamically via VAD and transcribed incrementally. (`IncrementalSpeechSegmenter` tracks onset/sustain/trailing-silence across chunks; each completed utterance is transcribed as it completes.)
+- [x] Transcribed text is output to stdout, clipboard, or typed via keystrokes as each speech chunk finishes. (`transcribeEnhanceAndEmit` runs per utterance inside the streaming loop, not after the session ends.)
+- [x] If `--seconds` / `--duration` is specified, dictation runs up to the requested duration while still processing chunks incrementally. (`StreamingDictationLoop.run`'s `maxDurationSeconds` caps total ingested audio, flushing any in-progress utterance at the cap.)
+- [x] Clean termination and resource cleanup (ALSA capture handle, transcription background tasks) on SIGINT / Ctrl+C. (SIGINT sets a static flag polled between chunk reads; `stream.stop()` in a `defer` closes the ALSA handle. Transcription runs inline per utterance, not as a separate background task, so there is nothing further to drain on exit -- see implementation note below.)
+- [x] Unit tests for continuous streaming recorder and incremental VAD segmentation state machine. (`Tests/FluidVoiceLinuxCLITests/VoiceActivityDetectorTests.swift`: `IncrementalSpeechSegmenter` tests for multi-burst segmentation and stream-end flush, `StreamingDictationLoop` tests for chunk-driven callback mechanics, max-duration cap, and SIGINT-style stop-flag handling.)
+
+**Implementation note**: transcription/enhancement/output run synchronously per utterance inside the same loop that reads audio (not as detached background tasks), because `AlsaAudioStream.readChunk` is deliberately single-threaded/pull-based -- ALSA's C read/close calls aren't documented safe to call concurrently. This still satisfies "incremental, not all at the end" (each utterance is emitted before the next one is even recorded) and avoids a Swift-concurrency footgun where a blocking synchronous call (`AIEnhancementService.enhanceBlocking`, which itself semaphore-waits on a nested `Task`) run from inside an unstructured `Task` could starve the cooperative thread pool. A real ALSA capture device was not available in this sandboxed environment to verify live end-to-end SIGINT behavior; verified instead via the pure-Swift `StreamingDictationLoop`/`IncrementalSpeechSegmenter` unit tests plus code review of the SIGINT-handling code path.
 
 ### Verification Plan
 1. **Unit & Pipeline Tests**:
