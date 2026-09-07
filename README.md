@@ -1,5 +1,20 @@
 # FluidVoice
 
+> [!NOTE]
+> **Linux port status:** I've moved on to [voxi](https://ubunatic.com/voxi) for my own
+> voice-to-text needs on Linux. Thanks to this project for unveiling the Cohere transcription
+> path — it's what made voxi's move possible.
+>
+> This fork got surprisingly far on standard Linux capabilities alone, with no CoreML/Apple
+> framework dependency anywhere: a headless CLI (`record`/`transcribe`/`dictate`) running
+> end-to-end on real hardware, GPU-accelerated Whisper via Vulkan, NVIDIA Parakeet TDT v3,
+> Cohere Transcribe, and Nemotron Speech 3.5 as swappable STT backends, Silero VAD-based
+> speech segmentation, local LLM AI post-enhancement (Ollama/Claude/Gemini/OpenAI), and
+> clipboard/typing output drivers for X11 and Wayland — all passing 55+ unit/integration
+> tests. See [`docs/LINUX_MIGRATION_BRANCH_PLAN.md`](docs/LINUX_MIGRATION_BRANCH_PLAN.md)
+> and [`docs/SwiftLinux.md`](docs/SwiftLinux.md) for the full writeup of how
+> Swift-on-Linux actually behaves.
+
 <p align="center">
   <a href="https://github.com/altic-dev/FluidVoice/stargazers"><img src="https://img.shields.io/github/stars/altic-dev/FluidVoice?style=social" alt="GitHub stars"/></a>
   <a href="https://github.com/sponsors/altic-dev"><img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-ea4aaa?logo=githubsponsors&logoColor=white" alt="Sponsor FluidVoice"/></a>
