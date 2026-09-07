@@ -3,6 +3,13 @@ import Foundation
 @testable import FluidVoiceLinuxCLICore
 
 final class ConcatenatedAudioDictationTests: XCTestCase {
+    // These tests transcribe ~88s of synthesized audio through real ASR backends when the
+    // dev sample fixtures are present, so they get a much larger timeout than the suite
+    // default (issues/020) to allow for real model load + inference time.
+    override func invokeTest() {
+        runWithTimeout(180) { super.invokeTest() }
+    }
+
     private var sampleTestWavPath: String {
         "\(ProcessInfo.processInfo.environment["HOME"] ?? "")/.config/fluidvoice/dev/samples/test.wav"
     }

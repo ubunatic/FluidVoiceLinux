@@ -3,6 +3,10 @@ import Foundation
 @testable import FluidVoiceLinuxCLICore
 
 final class DictateCommandArgumentTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     func testParsesDefaultArguments() throws {
         let opts = try DictateCommand.parseArguments([])
         XCTAssertEqual(opts.backend, .parakeet)

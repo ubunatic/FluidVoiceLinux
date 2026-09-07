@@ -6,6 +6,10 @@ import XCTest
 // exercises the RIFF/WAVE header-building logic against a fixed input buffer — no
 // ALSA device needed, per docs/SwiftLinux.md §3's testability split.
 final class WavFormatTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     func testHeaderFieldsForMonoSixteenBit() {
         let header = WavFormat.header(
             sampleRate: 16000,

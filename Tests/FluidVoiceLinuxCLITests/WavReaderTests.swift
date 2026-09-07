@@ -6,6 +6,10 @@ import XCTest
 // WavReader.decode is pure buffer parsing (no file I/O), so it's tested here against
 // in-memory WAV bytes built with the existing WavFormat.makeFile helper from Phase 3.
 final class WavReaderTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     func testDecodesMonoSixteenKilohertzRoundTrip() throws {
         let samples: [Int16] = [0, 16384, -16384, 32767, -32768]
         let wavData = WavFormat.makeFile(samples: samples, sampleRate: 16000, channelCount: 1)

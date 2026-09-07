@@ -36,6 +36,10 @@ final class MockURLProtocol: URLProtocol {
 }
 
 final class AIEnhancementServiceTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     var session: URLSession!
 
     override func setUp() {

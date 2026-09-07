@@ -6,6 +6,10 @@ import XCTest
 // argument parsing is split from execution (RecordCommand.run) specifically so it is
 // unit-testable without a real ALSA capture device — see docs/SwiftLinux.md §3.
 final class RecordCommandArgumentTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     func testParsesRequiredArguments() throws {
         let options = try RecordCommand.parseArguments(["--seconds", "3", "--out", "/tmp/x.wav"])
 

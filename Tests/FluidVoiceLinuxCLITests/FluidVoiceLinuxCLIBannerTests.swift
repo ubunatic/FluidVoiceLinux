@@ -6,6 +6,10 @@ import XCTest
 // issues/002-linux-migration-phase-2-hello-swift-canary-cli.md). Wired into
 // Package.swift's Linux-only #else branch and run via `make check`/`make test`.
 final class FluidVoiceLinuxCLIBannerTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     func testBannerContainsProgramNameAndVersion() {
         let output = FluidVoiceLinuxCLIBanner.banner()
 

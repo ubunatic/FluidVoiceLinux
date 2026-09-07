@@ -7,6 +7,10 @@ import XCTest
 // is unit-testable without a real whisper model file or a GPU — see
 // docs/SwiftLinux.md §3.
 final class TranscribeCommandArgumentTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     func testParsesRequiredArgumentOnly() throws {
         let options = try TranscribeCommand.parseArguments(["--in", "/tmp/x.wav"])
 

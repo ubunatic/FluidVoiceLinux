@@ -8,6 +8,10 @@ import XCTest
 // touching the real filesystem or environment, so all three resolution branches
 // are deterministically testable here (docs/SwiftLinux.md §3).
 final class ModelPathResolutionTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     func testExplicitFlagWinsEvenWhenRepoRelativeExists() {
         let resolved = ModelPathResolver.resolve(
             explicit: "/opt/models/ggml-tiny.en.bin",

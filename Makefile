@@ -16,6 +16,14 @@ SWIFT_BUILD_FLAGS := -c release
 # installs `swiftlang`/`swiftlang-dev` directly. See docs/LINUX_SETUP.md.
 SWIFT := swift
 
+# Suite-level wall-clock cap for `swift test` (issues/020): a clean `swift package clean`
+# rebuild + full test run measures ~8s and a warm run ~3s (61 tests, slowest single test
+# ~1.1s), so 300s/5m leaves generous headroom while still catching a silent hang (the
+# issue 017 incident ran 20+ minutes with nothing to catch it) in minutes, not tens of
+# minutes. `--kill-after` guarantees a SIGKILL if the process tree ignores SIGTERM.
+TEST_TIMEOUT      := 300
+TEST_KILL_AFTER   := 10
+
 help: 🤖  # show this help
 	@grep -E '^[a-zA-Z_-]+:.*[⚙🤖].*#+' $(MAKEFILE_LIST) | \
 	awk 'BEGIN {FS = ":.*#+ "}; {printf "    $(_prim)%-15s$(_rst) %s\n", $$1, $$2}'
@@ -45,7 +53,7 @@ uninstall: ⚙️  # remove installed binary from user and system paths
 	rm -f $(HOME)/.local/bin/$(BINARY) $(HOME)/.local/bin/fluidvoice-linux $(HOME)/.local/bin/fluidvoice $(PREFIX)/bin/$(BINARY) $(PREFIX)/bin/fluidvoice-linux $(PREFIX)/bin/fluidvoice
 
 check: ⚙️ preflight  # run tests for Linux-eligible targets (excludes macOS-only Tests/FluidDictationIntegrationTests)
-	@$(SWIFT) test || echo "⚠️  no Linux test target yet — expected pre-Phase 5, see docs/LINUX_MIGRATION_BRANCH_PLAN.md"
+	@SWIFT=$(SWIFT) TEST_TIMEOUT=$(TEST_TIMEOUT) TEST_KILL_AFTER=$(TEST_KILL_AFTER) ./scripts/run-tests-with-timeout.sh
 
 test: ⚙️ check  # alias for check
 

@@ -3,6 +3,10 @@ import Foundation
 @testable import FluidVoiceLinuxCLICore
 
 final class VoiceActivityDetectorTests: XCTestCase {
+    override func invokeTest() {
+        runWithTimeout { super.invokeTest() }
+    }
+
     func testVADConfigurationDefaults() {
         let config = VADConfiguration()
         XCTAssertEqual(config.threshold, 0.5)
