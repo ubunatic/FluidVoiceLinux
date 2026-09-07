@@ -43,6 +43,13 @@ public enum TextOutputDriver {
         return nil
     }
 
+    /// Issue 017: the previous `wl-copy` invocation, if it's still serving the clipboard
+    /// selection. Continuous streaming dictation can call `copyToClipboard` once per
+    /// transcribed utterance; without tracking and stopping the prior instance, a
+    /// long-running `dictate --clipboard` session would accumulate one resident `wl-copy`
+    /// daemon per utterance instead of just the latest one.
+    private static var previousWlCopyProcess: Process?
+
     /// Copies text to the system clipboard using wl-copy, xclip, or xsel.
     public static func copyToClipboard(_ text: String) throws {
         let isWayland = ProcessInfo.processInfo.environment["WAYLAND_DISPLAY"] != nil
@@ -56,10 +63,25 @@ public enum TextOutputDriver {
         process.executableURL = URL(fileURLWithPath: tool)
 
         if tool.hasSuffix("wl-copy") {
+            // wl-copy intentionally stays resident after this call returns, to keep
+            // serving the Wayland clipboard selection -- that's normal wl-copy behavior.
+            // Two things follow from that for a long-running caller (issue 017's
+            // continuous dictation loop can call this once per transcribed utterance):
+            //  1. Without explicit stdio, this child inherits our stdout/stderr file
+            //     descriptors and never closes them, so anything reading *our* output to
+            //     EOF (a shell pipeline, or a test harness capturing subprocess output)
+            //     blocks forever once wl-copy outlives us. Give it its own discarded
+            //     stdio instead of inheriting ours.
+            //  2. Stop the previous instance first so a multi-utterance session doesn't
+            //     accumulate one wl-copy daemon per utterance.
+            previousWlCopyProcess?.terminate()
+            previousWlCopyProcess = nil
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
             process.arguments = ["--trim-newline", text]
             do {
                 try process.run()
-                // wl-copy forks a daemon on Wayland to serve the selection
+                previousWlCopyProcess = process
             } catch {
                 throw TextOutputDriverError.executionFailed(error.localizedDescription)
             }

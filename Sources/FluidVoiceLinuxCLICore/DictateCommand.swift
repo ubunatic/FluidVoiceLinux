@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 public struct DictateOptions: Equatable {
     public let backend: STTEngineBackend
@@ -211,17 +216,17 @@ public enum DictateCommand {
 
         print("🎙️ FluidVoice Dictation Active [\(modelLabel)] (output: \(options.outputTarget.rawValue), lang: \(options.language))")
         if let maxSec = options.maxDurationSeconds {
-            print("Listening for \(maxSec)s...")
+            print("Listening for up to \(maxSec)s (press Ctrl+C to stop early)...")
         } else {
             print("Speak into your microphone (press Ctrl+C to stop)...")
         }
 
-        // Capture audio segment
-        let recordDuration = options.maxDurationSeconds ?? 5.0
-        let recording: AudioRecordingResult
+        // Issue 017: stream continuously from ALSA instead of capturing one fixed-duration
+        // buffer, segmenting/transcribing/emitting each utterance as it completes rather
+        // than only after the whole session ends.
+        let stream: AlsaAudioStream
         do {
-            recording = try AlsaAudioRecorder.record(
-                seconds: recordDuration,
+            stream = try AlsaAudioStream.open(
                 sampleRate: 16000,
                 channelCount: 1,
                 deviceName: options.deviceName
@@ -231,26 +236,56 @@ public enum DictateCommand {
             return 1
         }
 
-        let floatSamples = recording.samples.map { Float($0) / 32768.0 }
-
-        // VAD filtering
-        let intervals = EnergyVoiceActivityDetector.detectIntervals(
-            samples: floatSamples,
-            config: VADConfiguration(minSpeechDurationMs: 200, minSilenceDurationMs: 250, sampleRate: 16000)
-        )
-
-        guard !intervals.isEmpty else {
-            print("No speech detected.")
-            return 0
+        installSIGINTHandler()
+        defer {
+            restoreDefaultSIGINTHandler()
+            stream.stop()
         }
 
-        // Transcribe speech
+        var utteranceCount = 0
+        do {
+            try StreamingDictationLoop.run(
+                sampleRate: 16000,
+                vadConfig: VADConfiguration(minSpeechDurationMs: 200, minSilenceDurationMs: 400, sampleRate: 16000),
+                maxDurationSeconds: options.maxDurationSeconds,
+                shouldStop: { interruptRequested },
+                nextChunk: { try stream.readChunk(framesPerChunk: 1600) },
+                onUtterance: { samples in
+                    utteranceCount += 1
+                    transcribeEnhanceAndEmit(
+                        samples: samples,
+                        options: options,
+                        resolvedModelPath: resolvedModelPath
+                    )
+                }
+            )
+        } catch {
+            FileHandle.standardError.write(Data("dictate: audio capture failed: \(error)\n".utf8))
+            return 1
+        }
+
+        if utteranceCount == 0 {
+            print("No speech detected.")
+        }
+
+        return 0
+    }
+
+    /// Transcribes one segmented utterance, runs `--enhance` AI post-processing if
+    /// requested, and emits the result via the configured output driver. Errors are
+    /// reported to stderr per-utterance rather than aborting the whole streaming session --
+    /// one bad chunk (e.g. a transient transcription failure) shouldn't kill dictation.
+    private static func transcribeEnhanceAndEmit(
+        samples: [Float],
+        options: DictateOptions,
+        resolvedModelPath: String
+    ) {
         var rawText = ""
         do {
             if options.backend == .whisper {
                 let whisperBackend: WhisperBackend = options.noGPU ? .cpuOnly : .auto
                 let res = try WhisperTranscriber.transcribe(
-                    samples: floatSamples,
+                    samples: samples,
                     modelPath: resolvedModelPath,
                     backend: whisperBackend,
                     language: options.language
@@ -258,7 +293,7 @@ public enum DictateCommand {
                 rawText = res.text
             } else {
                 let res = try CohereTranscriber.transcribe(
-                    samples: floatSamples,
+                    samples: samples,
                     sampleRate: 16000,
                     modelPath: resolvedModelPath,
                     language: options.language
@@ -267,13 +302,12 @@ public enum DictateCommand {
             }
         } catch {
             FileHandle.standardError.write(Data("dictate: transcription failed: \(error)\n".utf8))
-            return 1
+            return
         }
 
         let cleanedRaw = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanedRaw.isEmpty else {
-            print("No speech transcribed.")
-            return 0
+            return
         }
 
         var finalText = cleanedRaw
@@ -297,7 +331,23 @@ public enum DictateCommand {
             FileHandle.standardError.write(Data("dictate: output failed: \(error)\n".utf8))
             print(finalText)
         }
+    }
 
-        return 0
+    /// Set from the SIGINT handler installed in `installSIGINTHandler` (running
+    /// synchronously on the same thread it interrupts, since the streaming loop below is
+    /// single-threaded) and polled by `StreamingDictationLoop.run`'s `shouldStop` closure --
+    /// the same signal-sets-a-static-flag pattern `FileLogger`'s crash handlers use
+    /// elsewhere in this codebase.
+    fileprivate static var interruptRequested = false
+
+    private static func installSIGINTHandler() {
+        interruptRequested = false
+        signal(SIGINT) { _ in
+            DictateCommand.interruptRequested = true
+        }
+    }
+
+    private static func restoreDefaultSIGINTHandler() {
+        signal(SIGINT, SIG_DFL)
     }
 }

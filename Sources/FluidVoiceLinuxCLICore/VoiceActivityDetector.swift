@@ -269,6 +269,193 @@ public enum SileroVoiceActivityDetector {
     }
 }
 
+/// Issue 017 (see issues/017-continuous-streaming-dictation-loop-in-dictate-subcommand-without-premature-cutoff.md):
+/// an incremental, streaming counterpart to `EnergyVoiceActivityDetector.detectIntervals`.
+/// The batch detector needs the whole recording up front; this type consumes audio in small
+/// chunks (as they arrive from a live ALSA stream) and emits each utterance's samples as
+/// soon as its trailing silence pad completes, so `dictate` can transcribe/output speech
+/// incrementally instead of waiting for the whole session to end.
+///
+/// Mirrors the batch detector's onset/sustain/trailing-silence state machine (same
+/// `minSpeechDurationMs`/`minSilenceDurationMs`/`speechPadMs` semantics) but tracks state
+/// across `ingest` calls instead of over one fixed array, and keeps a rolling pre-roll
+/// buffer (bounded to `speechPadMs`) so an utterance's leading pad is captured even though
+/// speech onset is only confirmed a few frames after it actually starts.
+public final class IncrementalSpeechSegmenter {
+    public let config: VADConfiguration
+    private let frameSizeMs: Int
+    private let energyThreshold: Float
+
+    private let frameLength: Int
+    private let minSpeechFrames: Int
+    private let minSilenceFrames: Int
+    private let preRollCapacitySamples: Int
+
+    /// Samples not yet long enough to form a full frame.
+    private var pendingSamples: [Float] = []
+    /// Rolling buffer of the most recent audio while idle (not yet speaking), capped to
+    /// `speechPadMs` worth of samples, used as the leading pad once speech onset confirms.
+    private var preRoll: [Float] = []
+    /// Frames accumulated since the current speech run started but before onset is
+    /// confirmed (i.e. while `speechRun < minSpeechFrames`); folded into `currentUtterance`
+    /// once onset confirms, discarded if the run fizzles back out before then.
+    private var pendingOnsetSamples: [Float] = []
+    /// Samples belonging to the in-progress utterance, once onset has been confirmed.
+    private var currentUtterance: [Float] = []
+
+    private var speechRun = 0
+    private var silenceRun = 0
+    private var isSpeaking = false
+
+    public init(
+        config: VADConfiguration = VADConfiguration(),
+        frameSizeMs: Int = 30,
+        energyThreshold: Float = 0.015
+    ) {
+        self.config = config
+        self.frameSizeMs = frameSizeMs
+        self.energyThreshold = energyThreshold
+        self.frameLength = max(1, config.sampleRate * frameSizeMs / 1000)
+        self.minSpeechFrames = max(1, config.minSpeechDurationMs / frameSizeMs)
+        self.minSilenceFrames = max(1, config.minSilenceDurationMs / frameSizeMs)
+        self.preRollCapacitySamples = max(0, config.sampleRate * config.speechPadMs / 1000)
+    }
+
+    /// Feeds newly-captured samples into the state machine. Returns the samples of any
+    /// utterances that completed as a result (i.e. reached `minSilenceDurationMs` of
+    /// trailing silence after speech) -- usually zero or one per call, but a call spanning
+    /// a long buffer could complete more than one.
+    public func ingest(_ samples: [Float]) -> [[Float]] {
+        guard !samples.isEmpty else { return [] }
+        pendingSamples.append(contentsOf: samples)
+
+        var completed: [[Float]] = []
+        while pendingSamples.count >= frameLength {
+            let frame = Array(pendingSamples[0..<frameLength])
+            pendingSamples.removeFirst(frameLength)
+            if let utterance = process(frame: frame) {
+                completed.append(utterance)
+            }
+        }
+        return completed
+    }
+
+    /// Call once the underlying audio source ends (stream stopped/SIGINT/session duration
+    /// elapsed) to flush any in-progress utterance that hadn't yet reached its trailing
+    /// silence pad, so speech right at the end of a session isn't silently dropped.
+    public func flush() -> [Float]? {
+        defer {
+            currentUtterance = []
+            pendingOnsetSamples = []
+            preRoll = []
+            speechRun = 0
+            silenceRun = 0
+            isSpeaking = false
+        }
+        guard isSpeaking, !currentUtterance.isEmpty else { return nil }
+        return currentUtterance
+    }
+
+    private func process(frame: [Float]) -> [Float]? {
+        var sumSq: Float = 0.0
+        for sample in frame {
+            sumSq += sample * sample
+        }
+        let rms = sqrt(sumSq / Float(frame.count))
+        let isFrameActive = rms >= energyThreshold
+
+        if isFrameActive {
+            silenceRun = 0
+            if isSpeaking {
+                currentUtterance.append(contentsOf: frame)
+                return nil
+            }
+
+            speechRun += 1
+            pendingOnsetSamples.append(contentsOf: frame)
+            guard speechRun >= minSpeechFrames else { return nil }
+
+            isSpeaking = true
+            currentUtterance = preRoll + pendingOnsetSamples
+            pendingOnsetSamples = []
+            preRoll = []
+            return nil
+        }
+
+        if isSpeaking {
+            currentUtterance.append(contentsOf: frame)
+            silenceRun += 1
+            guard silenceRun >= minSilenceFrames else { return nil }
+
+            let finished = currentUtterance
+            currentUtterance = []
+            isSpeaking = false
+            speechRun = 0
+            silenceRun = 0
+            return finished
+        }
+
+        // Idle and still silent: reset any fizzled onset attempt and keep rolling the
+        // pre-speech pad buffer.
+        speechRun = 0
+        pendingOnsetSamples = []
+        preRoll.append(contentsOf: frame)
+        if preRoll.count > preRollCapacitySamples {
+            preRoll.removeFirst(preRoll.count - preRollCapacitySamples)
+        }
+        return nil
+    }
+}
+
+/// Issue 017: drives `IncrementalSpeechSegmenter` over a pull-based chunk source, so the
+/// segmentation-loop mechanics (reading chunks, feeding the segmenter, emitting completed
+/// utterances, respecting a stop condition and an optional max-duration cap) can be unit
+/// tested with a synthetic chunk source instead of a real ALSA capture device. `dictate`
+/// wires this up with `AlsaAudioStream.readChunk` as `nextChunk`.
+public enum StreamingDictationLoop {
+    /// - Parameters:
+    ///   - sampleRate: sample rate of the Int16 PCM chunks `nextChunk` returns.
+    ///   - vadConfig: passed through to the underlying `IncrementalSpeechSegmenter`.
+    ///   - maxDurationSeconds: optional hard cap on total ingested audio duration; `nil`
+    ///     means run until `nextChunk` returns `nil` or `shouldStop()` becomes true.
+    ///   - shouldStop: checked before each read; returning `true` ends the loop (e.g. a
+    ///     SIGINT-set flag).
+    ///   - nextChunk: blocking pull of the next PCM chunk; `nil` signals end of stream.
+    ///   - onUtterance: invoked once per completed utterance, in stream order, plus once
+    ///     more at the end for any utterance flushed without a full trailing silence pad.
+    public static func run(
+        sampleRate: Int,
+        vadConfig: VADConfiguration,
+        maxDurationSeconds: Double?,
+        shouldStop: () -> Bool,
+        nextChunk: () throws -> [Int16]?,
+        onUtterance: ([Float]) -> Void
+    ) rethrows {
+        let segmenter = IncrementalSpeechSegmenter(config: vadConfig)
+        var totalSamplesIngested = 0
+        let maxSamples = maxDurationSeconds.map { Int(($0 * Double(sampleRate)).rounded(.up)) }
+
+        while !shouldStop() {
+            guard let chunk = try nextChunk() else { break }
+            if chunk.isEmpty { continue }
+
+            let floatChunk = chunk.map { Float($0) / 32768.0 }
+            totalSamplesIngested += floatChunk.count
+            for utterance in segmenter.ingest(floatChunk) {
+                onUtterance(utterance)
+            }
+
+            if let maxSamples, totalSamplesIngested >= maxSamples {
+                break
+            }
+        }
+
+        if let finalUtterance = segmenter.flush() {
+            onUtterance(finalUtterance)
+        }
+    }
+}
+
 public enum AudioSegmenter {
     /// Segments audio into discrete chunks given speech intervals.
     public static func segment(

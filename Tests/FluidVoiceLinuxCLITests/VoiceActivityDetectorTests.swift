@@ -111,6 +111,184 @@ final class VoiceActivityDetectorTests: XCTestCase {
         )
     }
 
+    // MARK: - IncrementalSpeechSegmenter (issue 017)
+
+    private func makeToneBurst(sampleRate: Int, durationSeconds: Double, amplitude: Float = 0.4) -> [Float] {
+        let count = Int(durationSeconds * Double(sampleRate))
+        return (0..<count).map { i in
+            Float(sin(Double(i) * 0.2)) * amplitude
+        }
+    }
+
+    func testIncrementalSegmenterEmitsNothingForPureSilence() {
+        let sampleRate = 16000
+        let segmenter = IncrementalSpeechSegmenter(
+            config: VADConfiguration(minSpeechDurationMs: 200, minSilenceDurationMs: 300, speechPadMs: 50, sampleRate: sampleRate)
+        )
+
+        let silence = [Float](repeating: 0.0, count: sampleRate * 2)
+        // Feed in small streaming-sized chunks, as a live ALSA stream would.
+        var completed: [[Float]] = []
+        for chunkStart in stride(from: 0, to: silence.count, by: 1600) {
+            let chunkEnd = min(chunkStart + 1600, silence.count)
+            completed.append(contentsOf: segmenter.ingest(Array(silence[chunkStart..<chunkEnd])))
+        }
+
+        XCTAssertTrue(completed.isEmpty)
+        XCTAssertNil(segmenter.flush())
+    }
+
+    func testIncrementalSegmenterSegmentsMultipleBurstsSeparatedBySilence() {
+        let sampleRate = 16000
+        let config = VADConfiguration(minSpeechDurationMs: 200, minSilenceDurationMs: 300, speechPadMs: 30, sampleRate: sampleRate)
+        let segmenter = IncrementalSpeechSegmenter(config: config)
+
+        // Structure: 0.4s silence, 0.6s speech, 0.5s silence, 0.7s speech, 0.4s silence.
+        var fullStream: [Float] = []
+        fullStream.append(contentsOf: [Float](repeating: 0.0, count: Int(0.4 * Double(sampleRate))))
+        fullStream.append(contentsOf: makeToneBurst(sampleRate: sampleRate, durationSeconds: 0.6))
+        fullStream.append(contentsOf: [Float](repeating: 0.0, count: Int(0.5 * Double(sampleRate))))
+        fullStream.append(contentsOf: makeToneBurst(sampleRate: sampleRate, durationSeconds: 0.7))
+        fullStream.append(contentsOf: [Float](repeating: 0.0, count: Int(0.4 * Double(sampleRate))))
+
+        // Feed in small streaming-sized chunks (100ms), as `StreamingDictationLoop` would
+        // via `AlsaAudioStream.readChunk`, to exercise the incremental/cross-call state
+        // machine rather than the whole-buffer batch detector.
+        var completed: [[Float]] = []
+        let chunkSize = 1600
+        for chunkStart in stride(from: 0, to: fullStream.count, by: chunkSize) {
+            let chunkEnd = min(chunkStart + chunkSize, fullStream.count)
+            completed.append(contentsOf: segmenter.ingest(Array(fullStream[chunkStart..<chunkEnd])))
+        }
+        if let flushed = segmenter.flush() {
+            completed.append(flushed)
+        }
+
+        XCTAssertEqual(completed.count, 2, "expected exactly two utterances, one per speech burst")
+        // Each utterance should be roughly the burst duration (plus pad), not the whole
+        // 2.6s stream and not just a sliver of one frame.
+        for utterance in completed {
+            let durationSeconds = Double(utterance.count) / Double(sampleRate)
+            XCTAssertGreaterThan(durationSeconds, 0.3)
+            XCTAssertLessThan(durationSeconds, 1.2)
+        }
+    }
+
+    func testIncrementalSegmenterFlushesInProgressUtteranceAtStreamEnd() {
+        let sampleRate = 16000
+        let config = VADConfiguration(minSpeechDurationMs: 200, minSilenceDurationMs: 500, speechPadMs: 30, sampleRate: sampleRate)
+        let segmenter = IncrementalSpeechSegmenter(config: config)
+
+        // Speech that never reaches a full trailing silence pad before the stream ends
+        // (e.g. session terminated by SIGINT or --seconds elapsing mid-utterance).
+        var fullStream: [Float] = []
+        fullStream.append(contentsOf: [Float](repeating: 0.0, count: Int(0.3 * Double(sampleRate))))
+        fullStream.append(contentsOf: makeToneBurst(sampleRate: sampleRate, durationSeconds: 0.8))
+
+        let completedDuringIngest = segmenter.ingest(fullStream)
+        XCTAssertTrue(completedDuringIngest.isEmpty, "no trailing silence pad yet, nothing should complete mid-stream")
+
+        guard let flushed = segmenter.flush() else {
+            return XCTFail("expected the in-progress utterance to flush at stream end")
+        }
+        XCTAssertGreaterThan(Double(flushed.count) / Double(sampleRate), 0.5)
+
+        // A second flush (e.g. called defensively twice) must not resurrect state.
+        XCTAssertNil(segmenter.flush())
+    }
+
+    // MARK: - StreamingDictationLoop (issue 017)
+
+    func testStreamingDictationLoopEmitsUtterancesFromChunkedSource() throws {
+        let sampleRate = 16000
+        var fullStream: [Float] = []
+        fullStream.append(contentsOf: [Float](repeating: 0.0, count: Int(0.3 * Double(sampleRate))))
+        fullStream.append(contentsOf: makeToneBurst(sampleRate: sampleRate, durationSeconds: 0.5))
+        fullStream.append(contentsOf: [Float](repeating: 0.0, count: Int(0.5 * Double(sampleRate))))
+        fullStream.append(contentsOf: makeToneBurst(sampleRate: sampleRate, durationSeconds: 0.5))
+        fullStream.append(contentsOf: [Float](repeating: 0.0, count: Int(0.5 * Double(sampleRate))))
+
+        let int16Stream: [Int16] = fullStream.map { sample in
+            Int16(max(-1.0, min(1.0, sample)) * 32767.0)
+        }
+
+        // Simulate a callback-driven audio source (like `AlsaAudioStream.readChunk`)
+        // handing over fixed-size PCM chunks until the recorded audio is exhausted.
+        var offset = 0
+        let chunkSize = 1600
+        func nextChunk() -> [Int16]? {
+            guard offset < int16Stream.count else { return nil }
+            let end = min(offset + chunkSize, int16Stream.count)
+            let chunk = Array(int16Stream[offset..<end])
+            offset = end
+            return chunk
+        }
+
+        var emittedUtterances: [[Float]] = []
+        try StreamingDictationLoop.run(
+            sampleRate: sampleRate,
+            vadConfig: VADConfiguration(minSpeechDurationMs: 200, minSilenceDurationMs: 300, speechPadMs: 30, sampleRate: sampleRate),
+            maxDurationSeconds: nil,
+            shouldStop: { false },
+            nextChunk: { nextChunk() },
+            onUtterance: { emittedUtterances.append($0) }
+        )
+
+        XCTAssertEqual(emittedUtterances.count, 2, "two speech bursts separated by silence should yield two utterances")
+    }
+
+    func testStreamingDictationLoopStopsAtMaxDuration() throws {
+        let sampleRate = 16000
+        // An effectively endless supply of continuous tone -- without a max-duration cap
+        // this source would never signal end-of-stream via `nil`.
+        func nextChunk() -> [Int16]? {
+            [Int16](repeating: 12000, count: 1600)
+        }
+
+        var totalEmittedSamples = 0
+        try StreamingDictationLoop.run(
+            sampleRate: sampleRate,
+            vadConfig: VADConfiguration(minSpeechDurationMs: 100, minSilenceDurationMs: 200, speechPadMs: 20, sampleRate: sampleRate),
+            maxDurationSeconds: 0.5,
+            shouldStop: { false },
+            nextChunk: { nextChunk() },
+            onUtterance: { totalEmittedSamples += $0.count }
+        )
+
+        // The loop must terminate (the test itself would hang otherwise) once
+        // maxDurationSeconds worth of audio has been ingested, flushing the still-speaking
+        // utterance rather than requiring a trailing silence pad it will never see.
+        XCTAssertGreaterThan(totalEmittedSamples, 0)
+    }
+
+    func testStreamingDictationLoopStopsWhenShouldStopBecomesTrue() throws {
+        let sampleRate = 16000
+        var chunksServed = 0
+        func nextChunk() -> [Int16]? {
+            chunksServed += 1
+            return [Int16](repeating: 12000, count: 1600)
+        }
+
+        var stopNow = false
+        var utteranceCount = 0
+        try StreamingDictationLoop.run(
+            sampleRate: sampleRate,
+            vadConfig: VADConfiguration(minSpeechDurationMs: 100, minSilenceDurationMs: 200, speechPadMs: 20, sampleRate: sampleRate),
+            maxDurationSeconds: nil,
+            shouldStop: { stopNow },
+            nextChunk: {
+                if chunksServed >= 5 {
+                    stopNow = true // simulate a SIGINT flag flipping mid-session
+                }
+                return nextChunk()
+            },
+            onUtterance: { _ in utteranceCount += 1 }
+        )
+
+        XCTAssertLessThanOrEqual(chunksServed, 6, "loop should stop shortly after shouldStop() flips true, not run indefinitely")
+        XCTAssertEqual(utteranceCount, 1, "the in-progress utterance should be flushed once the loop stops")
+    }
+
     func testSileroVADOnRealAudioSample() throws {
         let samplePath = "\(ProcessInfo.processInfo.environment["HOME"] ?? "")/.config/fluidvoice/dev/samples/chunks.wav"
         guard FileManager.default.fileExists(atPath: samplePath) else { return }

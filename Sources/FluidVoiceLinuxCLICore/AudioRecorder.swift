@@ -102,3 +102,110 @@ public enum AlsaAudioRecorder {
         )
     }
 }
+
+/// Issue 017 (see issues/017-continuous-streaming-dictation-loop-in-dictate-subcommand-without-premature-cutoff.md):
+/// a continuous ALSA capture session for the `dictate` subcommand's streaming loop, as an
+/// alternative to `AlsaAudioRecorder.record(seconds:)`'s fixed-duration one-shot capture.
+///
+/// Deliberately single-threaded/pull-based (`readChunk` is a blocking call driven by the
+/// caller's own loop, e.g. `StreamingDictationLoop.run`) rather than a push callback running
+/// on a background thread: the underlying `fv_alsa_capture_read`/`fv_alsa_capture_close` C
+/// calls are not documented as safe to invoke concurrently from different threads, so keeping
+/// all ALSA calls on one thread avoids a close-while-reading race entirely rather than
+/// guarding against it with locks.
+public final class AlsaAudioStream {
+    public let sampleRate: UInt32
+    public let channelCount: UInt16
+
+    /// `nil` once `stop()` has closed the ALSA handle.
+    private var capture: FVAlsaCaptureRef?
+
+    private init(capture: FVAlsaCaptureRef, sampleRate: UInt32, channelCount: UInt16) {
+        self.capture = capture
+        self.sampleRate = sampleRate
+        self.channelCount = channelCount
+    }
+
+    /// Opens the named ALSA capture device for continuous streaming reads. Mirrors
+    /// `AlsaAudioRecorder.record`'s open/negotiate logic but keeps the handle open for
+    /// repeated `readChunk` calls instead of reading a fixed duration up front.
+    public static func open(
+        sampleRate: UInt32 = 16000,
+        channelCount: UInt16 = 1,
+        deviceName: String = AlsaAudioRecorder.defaultDeviceName
+    ) throws -> AlsaAudioStream {
+        guard channelCount > 0 else {
+            throw AudioRecorderError("channelCount must be greater than 0 (got \(channelCount))")
+        }
+
+        var captureRef: FVAlsaCaptureRef?
+        var actualSampleRate: UInt32 = 0
+        var actualChannels: UInt32 = 0
+        let openStatus = deviceName.withCString { cDeviceName in
+            fv_alsa_capture_open(
+                cDeviceName,
+                sampleRate,
+                UInt32(channelCount),
+                &captureRef,
+                &actualSampleRate,
+                &actualChannels
+            )
+        }
+        guard openStatus == FV_ALSA_CAPTURE_OK, let capture = captureRef else {
+            let reason = String(cString: fv_alsa_capture_strerror(openStatus))
+            throw AudioRecorderError(
+                "failed to open ALSA capture device '\(deviceName)': \(reason) (code \(openStatus))"
+            )
+        }
+
+        return AlsaAudioStream(
+            capture: capture,
+            sampleRate: actualSampleRate,
+            channelCount: UInt16(actualChannels)
+        )
+    }
+
+    /// Blocking read of up to `framesPerChunk` interleaved frames. Returns an empty array on
+    /// a transient zero-frame read (e.g. a signal-interrupted `read` recovered by the C
+    /// shim) so the caller's loop can simply re-check its own stop condition and try again.
+    /// Returns `nil` once `stop()` has been called -- including if `stop()` runs from a
+    /// SIGINT handler while this call is blocked in the underlying ALSA read, in which case
+    /// the in-flight read is allowed to finish (or gets interrupted and recovers to zero
+    /// frames) before this returns `nil` on the next call.
+    public func readChunk(framesPerChunk: UInt32 = 1600) throws -> [Int16]? {
+        guard let capture else { return nil }
+
+        var buffer = [Int16](repeating: 0, count: Int(framesPerChunk) * Int(channelCount))
+        let framesRead: Int32 = buffer.withUnsafeMutableBufferPointer { pointer in
+            fv_alsa_capture_read(capture, pointer.baseAddress, framesPerChunk)
+        }
+
+        // stop() may have run while the read above was blocked; treat that as end-of-stream
+        // rather than surfacing a spurious read result.
+        guard self.capture != nil else { return nil }
+
+        if framesRead < 0 {
+            let reason = String(cString: fv_alsa_capture_strerror(framesRead))
+            throw AudioRecorderError("ALSA read failed: \(reason) (code \(framesRead))")
+        }
+        if framesRead == 0 {
+            return []
+        }
+        let sampleCount = Int(framesRead) * Int(channelCount)
+        return Array(buffer[0..<sampleCount])
+    }
+
+    /// Stops the stream and releases the ALSA capture handle. Idempotent, and only ever
+    /// touches the handle from whichever thread calls it first -- callers should call this
+    /// from the same thread driving `readChunk` (e.g. a loop's cleanup/defer) rather than
+    /// concurrently with an in-flight read.
+    public func stop() {
+        guard let capture else { return }
+        self.capture = nil
+        fv_alsa_capture_close(capture)
+    }
+
+    deinit {
+        stop()
+    }
+}
