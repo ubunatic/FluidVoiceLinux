@@ -227,3 +227,4 @@ sample/
 .codex
 AGENTS.md
 builds/
+*.lock
